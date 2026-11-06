@@ -31,6 +31,18 @@ const Core = (() => {
     return null;
   }
   const GENERIC = /cl[ií]nico geral|sem dentista|n[aã]o informado|avalia[cç][aã]o|endodontia \(|^-?$/i;
+  function limpaTexto(v, proc = false) {
+    let t = String(v ?? '').replace(/\s+/g, ' ').trim();
+    t = t.replace(/^[\s:;,.\-–—•·|/\\]+/, '').replace(/[\s:;,\-–—|]+$/, '');
+    t = t.replace(/\s+([,.;:)])/g, '$1').replace(/([(])\s+/g, '$1').replace(/([,;])(?=[^\s\d])/g, '$1 ');
+    if (proc) {
+      const letras = t.replace(/[^A-Za-zÀ-ÿ]/g, '');
+      const up = letras.replace(/[^A-ZÀ-Þ]/g, '').length;
+      if (letras.length > 3 && up / letras.length > 0.6) t = t.toLowerCase();
+      t = t.charAt(0).toUpperCase() + t.slice(1);
+    }
+    return t;
+  }
   const dayKey = d => d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : '';
 
   /* ---- detecção de colunas da planilha do sistema ---- */
@@ -106,8 +118,9 @@ const Core = (() => {
         valor: toNum(get('valor')),
         situacao: String(get('situacao') ?? get('status') ?? '').trim() || '—',
         status: String(get('status') ?? '').trim(),
-        procedimento: String(get('procedimento') ?? '').trim(),
-        paciente: String(get('paciente') ?? '').trim(),
+        procedimento: limpaTexto(get('procedimento'), true),
+        paciente: limpaTexto(get('paciente')),
+        obs: limpaTexto(get('obs')),
         convenio: String(get('convenio') ?? '').trim(),
         atendimento: get('atendimento') != null ? guiaKey(get('atendimento')) : '',
       });
@@ -145,7 +158,7 @@ const Core = (() => {
       let g = guiaKey(raw); if (!(g && g.length >= 5 && /\d{4,}/.test(g))) g = '';
       const at = atCol >= 0 ? guiaKey(r[atCol]) : '';
       if (!g && !at) return;
-      itens.push({ linha: i + 1, guia: g, guiaRaw: g ? String(raw).replace(/\.0$/, '').trim() : '', atend: at, valor: valCol >= 0 ? toNum(r[valCol]) : null, paciente: pacCol >= 0 ? String(r[pacCol] ?? '').trim() : '', procedimento: procCol >= 0 ? String(r[procCol] ?? '').trim() : '', data: datCol >= 0 ? toDate(r[datCol]) : null });
+      itens.push({ linha: i + 1, guia: g, guiaRaw: g ? String(raw).replace(/\.0$/, '').trim() : '', atend: at, valor: valCol >= 0 ? toNum(r[valCol]) : null, paciente: pacCol >= 0 ? limpaTexto(r[pacCol]) : '', procedimento: procCol >= 0 ? limpaTexto(r[procCol], true) : '', data: datCol >= 0 ? toDate(r[datCol]) : null });
       if (g && !seen.has(g)) { seen.add(g); guias.push(g); }
     });
     // atendimentos usados como 2º critério: só para linhas cuja guia não existe no sistema
@@ -189,7 +202,7 @@ const Core = (() => {
         Se não bater, fica pendente na divergência para o usuário decidir.
      4) Sem nenhuma planilha → usa o dentista do sistema, se estiver cadastrado.
      5) Decisões do usuário: resoluções de divergência, lançamentos não localizados e troca linha a linha. */
-  function reconcile({ systemRows, dentistFiles, dentistas, especialidades, situacoesBase, overrides = {}, diariasOverride = {}, resolucoes = {}, lancamentos = {}, tolAtend = 1, tolDiv = 1 }) {
+  function reconcile({ systemRows, dentistFiles, dentistas, especialidades, situacoesBase, overrides = {}, diariasOverride = {}, resolucoes = {}, lancamentos = {}, splits = {}, tolAtend = 1, tolDiv = 1 }) {
     const byId = Object.fromEntries(dentistas.map(d => [d.id, d]));
     const files = dentistFiles.filter(f => f.dentistaId);
     const add = (m, k, v) => { if (!m.has(k)) m.set(k, new Set()); m.get(k).add(v); };
@@ -261,24 +274,41 @@ const Core = (() => {
         }
         const id = f.name + '|' + k;
         divergencias.push({ id, arquivo: f.name, informanteId: f.dentistaId, atendimento: tp === 'a' ? key : '', guia: [...o.guias].join(', ') || '—', paciente: o.paciente, data: o.data,
-          procInformado: o.procs.join(' | '), procSistema: afetadas.map(l => l.procedimento).join(' | '), linhaIds: afetadas.map(l => l.id), pendentes: afetadas.filter(l => !l.executorId).length,
+          procInformado: o.procs.join('; '), procSistema: afetadas.map(l => l.procedimento).join('; '), linhaIds: afetadas.map(l => l.id), pendentes: afetadas.filter(l => !l.executorId).length,
           informado: o.valor, sistema: sis, dif: o.valor - sis, resolucao: resolucoes[id] || null });
       });
     });
     divergencias.sort((a, b) => Math.abs(b.dif) - Math.abs(a.dif));
 
     // ---- etapa 3: decisões do usuário
-    const extras = []; // ajustes de valor e lançamentos atribuídos
+    const extras = []; // ajustes de valor, lançamentos atribuídos e divisões entre dentistas
+    const inBase = l => baseSet.size === 0 || baseSet.has(l.situacao);
+    const nomeParts = partes => partes.map(p => `${byId[p.dentistaId]?.nome || '?'} ${Math.round(p.pct * 100) / 100}%`).join(' · ');
+    const partesOk = partes => Array.isArray(partes) && partes.filter(p => p.dentistaId && p.pct > 0).length >= 1;
+    const dividirLinha = (l, partes, motivo) => {
+      l.executorId = null; l.origem = 'split'; l.atPendente = null; l.split = partes; l.alerta = `${motivo}: ${nomeParts(partes)}`;
+      partes.forEach(p => { if (p.dentistaId && p.pct > 0) extras.push({ tipo: 'split', dentistaId: p.dentistaId, valor: l.valor * p.pct / 100, comissionavel: inBase(l), data: l.data, guia: l.guia, ref: l.guiaRaw, paciente: l.paciente, descricao: `${l.procedimento} (${p.pct}%)` }); });
+    };
     divergencias.forEach(d => {
       const r = d.resolucao; if (!r || !r.decisao || r.decisao === 'pendente') return;
+      if (r.decisao === 'split') {
+        if (!partesOk(r.partes)) return;
+        if (r.base === 'informado') {
+          d.linhaIds.forEach(i => { const l = linhas[i]; l.executorId = null; l.origem = 'split'; l.atPendente = null; l.split = r.partes; l.alerta = 'Dividida (valor informado): ' + nomeParts(r.partes); l.splitInformado = true; });
+          r.partes.forEach(p => { if (p.dentistaId && p.pct > 0) extras.push({ tipo: 'split', dentistaId: p.dentistaId, valor: d.informado * p.pct / 100, comissionavel: true, data: d.data || null, guia: null, ref: d.atendimento || d.guia, paciente: d.paciente, descricao: `Divisão do valor informado (${p.pct}%)` }); });
+        } else d.linhaIds.forEach(i => dividirLinha(linhas[i], r.partes, 'Dividida'));
+        return;
+      }
       const alvo = r.dentistaId || null;
       d.linhaIds.forEach(i => { const l = linhas[i]; l.executorId = alvo; l.origem = alvo ? 'manual' : 'nao_identificado'; l.atPendente = null; l.alerta = 'Definido na divergência de valor'; });
       if (alvo && r.decisao === 'informado' && Math.abs(d.dif) > 0.004) extras.push({ tipo: 'ajuste', dentistaId: alvo, valor: d.dif, data: d.data || null, ref: d.atendimento || d.guia, paciente: d.paciente, descricao: 'Ajuste p/ valor informado' });
     });
     linhas.forEach(l => {
-      if (overrides[l.id] !== undefined) { l.executorId = overrides[l.id] || null; l.origem = l.executorId ? 'manual' : 'nao_identificado'; l.atPendente = null; }
-      l.comissionavel = (baseSet.size === 0 || baseSet.has(l.situacao)) && !!l.executorId;
+      if (overrides[l.id] !== undefined && l.origem !== 'split') { l.executorId = overrides[l.id] || null; l.origem = l.executorId ? 'manual' : 'nao_identificado'; l.atPendente = null; }
     });
+    // divisão de guia definida na linha (vale para todas as linhas da guia)
+    linhas.forEach(l => { const sp = splits[l.guia]; if (sp && partesOk(sp.partes) && l.origem !== 'split') dividirLinha(l, sp.partes, 'Guia dividida'); });
+    linhas.forEach(l => { l.comissionavel = inBase(l) && !!l.executorId; });
 
     // ---- lançamentos informados e não localizados no sistema
     const naoEncontradas = [];
@@ -294,7 +324,7 @@ const Core = (() => {
     // ---- resumo por dentista
     const espById = Object.fromEntries(especialidades.map(e => [e.id, e]));
     const resumo = {};
-    const get = d => resumo[d.id] || (resumo[d.id] = { dentista: d, guias: new Set(), procs: 0, producao: 0, base: 0, ajustes: 0, dias: new Set(), pendente: 0 });
+    const get = d => resumo[d.id] || (resumo[d.id] = { dentista: d, guias: new Set(), procs: 0, producao: 0, base: 0, ajustes: 0, divididas: 0, dias: new Set(), pendente: 0 });
     linhas.forEach(l => {
       const d = byId[l.executorId]; if (!d) return;
       const s = get(d); s.guias.add(l.guia); s.procs++; s.producao += l.valor;
@@ -302,8 +332,11 @@ const Core = (() => {
     });
     extras.forEach(e => {
       const d = byId[e.dentistaId]; if (!d) return;
-      const s = get(d); s.ajustes += e.valor; s.producao += e.valor; s.base += e.valor;
-      if (e.data && e.tipo === 'lancamento') s.dias.add(dayKey(e.data));
+      const s = get(d); s.producao += e.valor;
+      if (e.tipo === 'split') { s.divididas += e.valor; s.procs++; if (e.guia) s.guias.add(e.guia); }
+      else s.ajustes += e.valor;
+      if (e.comissionavel === false) s.pendente += e.valor;
+      else { s.base += e.valor; if (e.data && e.tipo !== 'ajuste') s.dias.add(dayKey(e.data)); }
     });
     const resumoArr = Object.values(resumo).map(s => {
       const d = s.dentista, esp = espById[d.especialidadeId];
@@ -315,7 +348,7 @@ const Core = (() => {
       else if (forma === 'diaria') comissao = diarias * valorRef;
       else if (forma === 'fixo') comissao = valorRef;
       comissao = Math.round(comissao * 100) / 100;
-      return { dentistaId: d.id, nome: d.nome, especialidade: esp?.nome || '—', forma, valorRef, guias: s.guias.size, procs: s.procs, producao: s.producao, base: s.base, ajustes: s.ajustes, pendente: s.pendente, diarias, diariasCalc, comissao };
+      return { dentistaId: d.id, nome: d.nome, especialidade: esp?.nome || '—', forma, valorRef, guias: s.guias.size, procs: s.procs, producao: s.producao, base: s.base, ajustes: s.ajustes, divididas: s.divididas, pendente: s.pendente, diarias, diariasCalc, comissao };
     }).sort((a, b) => b.producao - a.producao);
 
     const divPend = divergencias.filter(d => !d.resolucao || d.resolucao.decisao === 'pendente').length;
@@ -324,23 +357,26 @@ const Core = (() => {
       producao: linhas.reduce((a, l) => a + l.valor, 0),
       base: resumoArr.reduce((a, r) => a + r.base, 0),
       comissao: resumoArr.reduce((a, r) => a + r.comissao, 0),
-      ajustes: extras.reduce((a, e) => a + e.valor, 0),
-      identificadas: linhas.filter(l => l.executorId).length,
+      ajustes: extras.filter(e => e.tipo !== 'split').reduce((a, e) => a + e.valor, 0),
+      identificadas: linhas.filter(l => l.executorId || l.origem === 'split').length,
+      divididas: linhas.filter(l => l.origem === 'split').length,
       viaDentista: linhas.filter(l => l.origem === 'dentista' || l.origem === 'atendimento').length,
       viaAtend: linhas.filter(l => l.origem === 'atendimento').length,
       viaSistema: linhas.filter(l => l.origem === 'sistema').length,
       manual: linhas.filter(l => l.origem === 'manual').length,
-      naoIdent: linhas.filter(l => !l.executorId && l.origem !== 'conflito').length,
+      naoIdent: linhas.filter(l => !l.executorId && l.origem !== 'conflito' && l.origem !== 'split').length,
       conflitos: linhas.filter(l => l.origem === 'conflito' && !l.executorId).length,
-      naoIdentValor: linhas.filter(l => !l.executorId).reduce((a, l) => a + l.valor, 0),
+      naoIdentValor: linhas.filter(l => !l.executorId && l.origem !== 'split').reduce((a, l) => a + l.valor, 0),
       naoEncontradas: naoEncontradas.length,
       neAbertos: naoEncontradas.filter(x => !x.decisao?.dentistaId && !x.decisao?.descartado).length,
       divergencias: divergencias.length, divPend,
     };
     tot.pendencias = tot.divPend + tot.neAbertos + tot.conflitos;
-    return { linhas, resumo: resumoArr, naoEncontradas, divergencias, extras, tot };
+    const pendentes = linhas.filter(l => /pend/i.test(l.situacao) || /pend/i.test(l.status));
+    tot.pendentesQtd = pendentes.length; tot.pendentesValor = pendentes.reduce((a, l) => a + l.valor, 0);
+    return { linhas, resumo: resumoArr, naoEncontradas, divergencias, extras, pendentes, tot };
   }
 
-  return { norm, nameKey, guiaKey, toNum, toDate, dayKey, findHeaderRow, mapColumns, analyzeSystemWorkbook, buildSystemRows, analyzeDentistWorkbook, matchDentist, guessDentistFromFilename, guessDentistFromText, reconcile };
+  return { norm, nameKey, guiaKey, toNum, toDate, dayKey, findHeaderRow, mapColumns, analyzeSystemWorkbook, buildSystemRows, analyzeDentistWorkbook, limpaTexto, matchDentist, guessDentistFromFilename, guessDentistFromText, reconcile };
 })();
 if (typeof module !== 'undefined') module.exports = Core;
