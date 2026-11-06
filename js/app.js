@@ -20,7 +20,7 @@ const S = {
   ro: false,           // competência fechada → somente leitura
   sys: null, denFiles: [],
   situacoes: [], sitBase: new Set(),
-  overrides: {}, overridesAuto: {}, aprovadas: {}, diarias: {}, resolucoes: {}, lancamentos: {}, splits: {}, pendView: { dent: '', q: '', page: 0, f: 'abertas' },
+  overrides: {}, overridesAuto: {}, aprovadas: {}, pagamentos: [], diarias: {}, resolucoes: {}, lancamentos: {}, splits: {}, pendView: { dent: '', q: '', page: 0, f: 'abertas' },
   result: null, view: { orig: 'todas', dent: '', q: '', page: 0 }, divView: { f: 'pend', page: 0 },
   editId: null, audFiltro: '',
 };
@@ -195,7 +195,7 @@ async function cadChanged() {
 $('#compMes').onchange = () => { if ($('#compMes').value) abrirCompetencia($('#compMes').value); };
 function resetEstado() {
   S.sys = null; S.denFiles = []; S.situacoes = []; S.sitBase = new Set();
-  S.overrides = {}; S.overridesAuto = {}; S.aprovadas = {}; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
+  S.overrides = {}; S.overridesAuto = {}; S.aprovadas = {}; S.pagamentos = []; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
   S.view = { orig: 'todas', dent: '', q: '', page: 0 }; S.divView = { f: 'pend', page: 0 };
   $('#tolDiv').value = 1;
 }
@@ -209,7 +209,7 @@ async function abrirCompetencia(mes) {
     S.conc = c || { competencia: comp, novo: true };
     if (c) {
       const regras = c.regras || {}, dec = c.decisoes || {};
-      S.overrides = dec.overrides || {}; S.diarias = dec.diarias || {}; S.resolucoes = dec.resolucoes || {}; S.lancamentos = dec.lancamentos || {}; S.splits = dec.splits || {}; S.overridesAuto = dec.overridesAuto || {}; S.aprovadas = dec.aprovadas || {};
+      S.overrides = dec.overrides || {}; S.diarias = dec.diarias || {}; S.resolucoes = dec.resolucoes || {}; S.lancamentos = dec.lancamentos || {}; S.splits = dec.splits || {}; S.overridesAuto = dec.overridesAuto || {}; S.aprovadas = dec.aprovadas || {}; S.pagamentos = dec.pagamentos || [];
       if (regras.tolDiv != null) $('#tolDiv').value = regras.tolDiv;
       const arqs = await q(sb.from('conciliacao_arquivos').select('*').eq('conciliacao_id', c.id).eq('ativo', true).order('enviado_em'), 'Arquivos');
       const sysA = arqs.filter(a => a.tipo === 'sistema').pop();
@@ -246,7 +246,7 @@ async function enviarArquivo(file, tipo, dentistaId) {
   return q(sb.from('conciliacao_arquivos').insert({ conciliacao_id: c.id, tipo, nome: file.name, dentista_id: dentistaId || null, storage_path: path, tamanho: file.size }).select().single(), 'Registrar arquivo');
 }
 const regrasAtuais = () => ({ sitBase: [...S.sitBase], tolDiv: Math.max(0, +$('#tolDiv').value || 0) });
-const decisoesAtuais = () => ({ overrides: S.overrides, diarias: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, overridesAuto: S.overridesAuto, aprovadas: S.aprovadas });
+const decisoesAtuais = () => ({ overrides: S.overrides, diarias: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, overridesAuto: S.overridesAuto, aprovadas: S.aprovadas, pagamentos: S.pagamentos });
 const totaisAtuais = () => {
   if (!S.result) return {};
   const T = S.result.tot;
@@ -314,7 +314,7 @@ $('#btnReabrir').onclick = async () => {
   catch (e) { fail(e); }
 };
 function detalheCompacto() {
-  return S.result.linhas.map(l => ({ g: l.guiaRaw, a: l.atendimento, d: l.dia, p: l.paciente, pr: l.procedimento, s: l.situacao, ds: l.dentistaSistema, e: l.executorId, en: dentById(l.executorId)?.nome || null, o: l.origem, c: l.comissionavel, v: l.valor, ob: l.obs || undefined, sp: l.split || undefined }));
+  return S.result.linhas.map(l => ({ g: l.guiaRaw, a: l.atendimento, d: l.dia, p: l.paciente, pr: l.procedimento, s: l.situacao, ds: l.dentistaSistema, e: l.executorId, en: dentById(l.executorId)?.nome || null, o: l.origem, c: l.comissionavel, v: l.valor, ob: l.obs || undefined, sp: l.split || undefined, pg: linhaPgto(l.id) || undefined }));
 }
 
 /* ===================== 1. sistema ===================== */
@@ -330,7 +330,7 @@ setupDrop($('#dropSys'), $('#fileSys'), async files => {
     const antigo = S.sys?.arquivoId;
     const arq = await enviarArquivo(f, 'sistema');
     if (antigo) await q(sb.from('conciliacao_arquivos').update({ ativo: false }).eq('id', antigo), 'Arquivo anterior');
-    S.overrides = {}; S.overridesAuto = {}; S.aprovadas = {}; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
+    S.overrides = {}; S.overridesAuto = {}; S.aprovadas = {}; S.pagamentos = []; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
     montarSistema(f.name, sheets, arq.id, null);
     S.denFiles.forEach(df => analyzeDen(df, false));
     renderAllConc(); run(false); salvar();
@@ -490,22 +490,105 @@ function renderResult() {
 function renderResumo() {
   const rows = S.result.resumo;
   const tot = k => rows.reduce((a, r) => a + r[k], 0);
-  $('#tblResumo').innerHTML = `<colgroup><col style="width:19%"><col style="width:10%"><col style="width:12%"><col style="width:6%"><col style="width:6%"><col style="width:11%"><col style="width:10%"><col style="width:11%"><col style="width:6%"><col style="width:9%"></colgroup>
-  <thead><tr><th>Dentista</th><th>Especialidade</th><th>Remuneração</th><th class="num">Guias</th><th class="num">Proc.</th><th class="num">Produção</th><th class="num" title="Ajustes de divergência e lançamentos não localizados atribuídos">Ajustes</th><th class="num">Base</th><th class="num">Diárias</th><th class="num">Comissão</th></tr></thead>
-  <tbody>${rows.length ? rows.map(r => `<tr style="cursor:pointer" data-dent="${r.dentistaId}" title="Ver guias de ${esc(r.nome)}">
-    <td><b>${esc(r.nome)}</b></td><td>${esc(r.especialidade)}</td>
+  $('#tblResumo').innerHTML = `<colgroup><col style="width:17%"><col style="width:9%"><col style="width:11%"><col style="width:6%"><col style="width:5%"><col style="width:11%"><col style="width:9%"><col style="width:11%"><col style="width:6%"><col style="width:9%"><col style="width:6%"></colgroup>
+  <thead><tr><th>Dentista</th><th>Especialidade</th><th>Remuneração</th><th class="num">Guias</th><th class="num">Proc.</th><th class="num">Produção</th><th class="num" title="Ajustes de divergência e lançamentos não localizados atribuídos">Ajustes</th><th class="num">Base</th><th class="num">Diárias</th><th class="num">Comissão</th><th class="num">Pgto</th></tr></thead>
+  <tbody>${rows.length ? rows.map(r => `<tr style="cursor:pointer" data-dent="${r.dentistaId}" title="Conferir informado × apurado de ${esc(r.nome)}">
+    <td><b style="color:var(--brand);text-decoration:underline;text-underline-offset:3px">${esc(r.nome)}</b></td><td>${esc(r.especialidade)}</td>
     <td>${r.forma === 'percentual' ? r.valorRef + '% da base' : r.forma === 'diaria' ? brl(r.valorRef) + '/dia' : brl(r.valorRef) + ' fixo'}</td>
     <td class="num">${n0(r.guias)}</td><td class="num">${n0(r.procs)}</td><td class="num">${brl(r.producao)}</td><td class="num" style="color:${r.ajustes ? 'var(--ink)' : 'var(--muted)'}">${r.ajustes ? brl(r.ajustes) : '—'}</td><td class="num">${brl(r.base)}</td>
     <td class="num">${r.forma === 'diaria' ? `<input class="inp num" type="number" min="0" step="1" value="${r.diarias}" data-dia="${r.dentistaId}" title="Calculado: ${r.diariasCalc}" style="width:60px;text-align:right">` : `<span class="muted">${r.diariasCalc}</span>`}</td>
-    <td class="num"><b>${brl(r.comissao)}</b></td></tr>`).join('') : `<tr><td colspan="10" class="empty">Nenhum dentista identificado. Confira o cadastro e os vínculos das planilhas.</td></tr>`}</tbody>
-  <tfoot><tr><td>Total</td><td></td><td></td><td class="num">${n0(tot('guias'))}</td><td class="num">${n0(tot('procs'))}</td><td class="num">${brl(tot('producao'))}</td><td class="num">${brl(tot('ajustes'))}</td><td class="num">${brl(tot('base'))}</td><td></td><td class="num">${brl(tot('comissao'))}</td></tr></tfoot>`;
+    <td class="num"><b>${brl(r.comissao)}</b></td><td class="num">${pgtoTxt(r.dentistaId)}</td></tr>`).join('') : `<tr><td colspan="11" class="empty">Nenhum dentista identificado. Confira o cadastro e os vínculos das planilhas.</td></tr>`}</tbody>
+  <tfoot><tr><td>Total</td><td></td><td></td><td class="num">${n0(tot('guias'))}</td><td class="num">${n0(tot('procs'))}</td><td class="num">${brl(tot('producao'))}</td><td class="num">${brl(tot('ajustes'))}</td><td class="num">${brl(tot('base'))}</td><td></td><td class="num">${brl(tot('comissao'))}</td><td></td></tr></tfoot>`;
   $('#tblResumo').querySelectorAll('tr[data-dent]').forEach(tr => tr.onclick = e => {
     if (e.target.tagName === 'INPUT') return;
-    S.view.dent = tr.dataset.dent; S.view.orig = 'todas'; S.view.page = 0; renderSeg(); renderDet();
-    $('#tblDet').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    abrirConferencia(tr.dataset.dent);
   });
+  renderPgInfo();
   $('#tblResumo').querySelectorAll('[data-dia]').forEach(i => i.onchange = () => { S.diarias[i.dataset.dia] = Math.max(0, +i.value || 0); run(false); salvar(); });
 }
+/* ===================== conferência do dentista ===================== */
+const ST_LBL = { ok: '✓ Conciliado', dif: '≠ Diferença', so_sistema: 'Só no sistema', outro: 'Apurado p/ outro / sem executor', pendente: 'Pendente no sistema', nao_localizado: 'Não localizado no sistema' };
+const ST_CURTO = { ok: '✓ Conciliado', dif: '≠ Diferença', so_sistema: 'Só no sistema', outro: 'Outro executor', pendente: 'Pendente', nao_localizado: 'Não localizado' };
+let dmState = { id: null, f: 'todas' };
+function abrirConferencia(id) { dmState = { id, f: 'todas' }; renderConferencia(); $('#dentModal').classList.add('on'); }
+$('#dmFechar').onclick = () => $('#dentModal').classList.remove('on');
+$('#dmDet').onclick = () => { $('#dentModal').classList.remove('on'); S.view.dent = dmState.id; S.view.orig = 'todas'; S.view.page = 0; showTab('res'); renderSeg(); renderDet(); setTimeout(() => $('#tblDet').scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); };
+function renderConferencia() {
+  const id = dmState.id, d = dentById(id);
+  const C = Core.compararDentista({ dentistaId: id, dentistFiles: S.denFiles.filter(f => f.dentistaId), result: S.result, systemRows: S.sys.rows, tol: Math.max(0, +$('#tolDiv').value || 0) });
+  const conc = C.temPlanilha && C.difs + C.outro + C.naoLocalizado + C.soSistema + C.pendente === 0;
+  $('#dmTitle').textContent = d?.nome || '—';
+  $('#dmStatus').innerHTML = !C.temPlanilha ? '<span class="pill novo">Sem planilha do dentista</span>' : conc ? '<span class="pill fech">✓ Conciliado</span>' : '<span class="pill rasc">≠ Não conciliado</span>';
+  $('#dmHint').textContent = C.temPlanilha
+    ? 'Comparação por atendimento entre o que o dentista informou na planilha de produção e o que foi apurado no sistema para ele (linhas atribuídas, divisões e ajustes). Guias pendentes em aberto não entram no apurado.'
+    : 'Este dentista não enviou planilha de produção nesta competência: tudo que aparece foi apurado pelo sistema (regras, Resp. no sistema ou atribuição manual).';
+  const k = (t, v, sub, cls = '') => `<div class="kpi ${cls}"><span>${t}</span><b>${v}</b><small>${sub}</small></div>`;
+  $('#dmKpis').innerHTML = k('Informado pelo dentista', brl(C.informado), `${n0(C.rows.filter(r => r.temInf).length)} atendimento(s)`) + k('Apurado no sistema', brl(C.apurado), `${n0(C.rows.filter(r => r.temSis).length)} atendimento(s)`)
+    + k('Diferença', brl(C.dif), Math.abs(C.dif) < 0.05 ? 'valores batem' : C.dif > 0 ? 'informou mais do que foi apurado' : 'apurado maior que o informado', Math.abs(C.dif) >= 0.05 ? 'bad' : '')
+    + k('Conciliados', `${n0(C.ok)} de ${n0(C.rows.length)}`, `${n0(C.difs)} com diferença · ${n0(C.soSistema)} só no sistema · ${n0(C.outro + C.pendente + C.naoLocalizado)} outros`);
+  const tabs = [['todas', 'Todos', C.rows.length], ['ok', ST_LBL.ok, C.ok], ['dif', ST_LBL.dif, C.difs], ['so_sistema', ST_LBL.so_sistema, C.soSistema], ['outro', 'Apurado p/ outro', C.outro], ['pendente', 'Pendente', C.pendente], ['nao_localizado', 'Não localizado', C.naoLocalizado]].filter(t => t[0] === 'todas' || t[2]);
+  $('#dmSeg').innerHTML = tabs.map(([kk, t, c]) => `<button class="${dmState.f === kk ? 'on' : ''}" data-dmf="${kk}">${t}<em>${c}</em></button>`).join('');
+  $('#dmSeg').querySelectorAll('button').forEach(b => b.onclick = () => { dmState.f = b.dataset.dmf; renderConferencia(); });
+  const rows = C.rows.filter(r => dmState.f === 'todas' || r.status === dmState.f);
+  $('#dmTbl').innerHTML = `<colgroup><col style="width:17%"><col style="width:13%"><col style="width:32%"><col style="width:9%"><col style="width:9%"><col style="width:8%"><col style="width:12%"></colgroup>
+    <thead><tr><th>Atendimento / paciente</th><th>Guia(s)</th><th>Procedimentos (informado · apurado)</th><th class="num">Informado</th><th class="num">Apurado</th><th class="num">Dif.</th><th>Situação</th></tr></thead>
+    <tbody>${rows.length ? rows.map(r => `<tr>
+      <td class="two"><span class="l"><span class="mono" style="font-size:12px">${r.tipoRef === 'a' ? esc(r.ref) : '—'}</span> · ${esc(r.paciente || '—')}</span><small>${r.data ? new Date(r.data).toLocaleDateString('pt-BR') : ''}</small></td>
+      <td class="two"><span class="l mono" style="font-size:12px" title="informada(s): ${esc(r.guiasInf.join(', '))}">${esc(r.guiasInf.join(', ') || '—')}</span><small class="mono" title="no sistema: ${esc(r.guiasSis.join(', '))}">${r.guiasSis.length ? 'sist.: ' + esc(r.guiasSis.join(', ')) : ''}</small></td>
+      <td class="two"><span class="l" title="${esc(r.procInf.join('; '))}">${esc(r.procInf.join('; ') || '—')}</span><small title="${esc(r.procSis.join('; '))}">${esc(r.procSis.join('; ') || '—')}</small></td>
+      <td class="num">${r.temInf ? brl(r.informado) : '—'}</td><td class="num">${r.temSis ? brl(r.apurado) : '—'}</td>
+      <td class="num" style="color:${Math.abs(r.dif) < 0.05 ? 'var(--muted)' : r.dif > 0 ? 'var(--bad)' : 'var(--info)'}">${brl(r.dif)}</td>
+      <td><span class="tag st-${r.status}" title="${ST_LBL[r.status]}">${ST_CURTO[r.status]}</span></td></tr>`).join('') : '<tr><td colspan="7" class="empty">Nada neste filtro.</td></tr>'}</tbody>
+    <tfoot><tr><td colspan="3">${n0(rows.length)} atendimento(s)</td><td class="num">${brl(rows.reduce((a, r) => a + r.informado, 0))}</td><td class="num">${brl(rows.reduce((a, r) => a + r.apurado, 0))}</td><td class="num">${brl(rows.reduce((a, r) => a + r.dif, 0))}</td><td></td></tr></tfoot>`;
+}
+
+/* ===================== enviado para pagamento ===================== */
+function linhasDoDentista(id) { return S.result.linhas.filter(l => l.executorId === id || (l.origem === 'split' && (l.split || []).some(p => p.dentistaId === id))); }
+function pgtoDe(id) { return S.pagamentos.filter(p => p.dentistas.some(x => x.id === id)).sort((a, b) => b.em.localeCompare(a.em))[0] || null; }
+function linhaPgto(lid) { const p = S.pagamentos.filter(pg => pg.linhas.includes(lid)).sort((a, b) => b.em.localeCompare(a.em))[0]; return p ? p.data : null; }
+const dataBR = d => d ? d.split('-').reverse().join('/') : '';
+function pgtoTxt(id) {
+  const p = pgtoDe(id); if (!p) return '<span class="muted">—</span>';
+  const ls = linhasDoDentista(id); const pend = ls.filter(l => !linhaPgto(l.id)).length;
+  return `<span title="Enviado em ${dataBR(p.data)} por ${esc(p.por)}${pend ? ` · ${pend} linha(s) nova(s) ainda não enviadas` : ''}" style="color:${pend ? 'var(--warn)' : 'var(--ok)'};font-weight:700;font-size:12px">${dataBR(p.data).slice(0, 5)}${pend ? '*' : ''}</span>`;
+}
+function renderPgInfo() {
+  const n = S.pagamentos.length;
+  $('#pgInfo').innerHTML = n ? `último envio: <b>${dataBR(S.pagamentos[n - 1].data)}</b> (${n0(S.pagamentos[n - 1].dentistas.length)} dentista(s)) · <a href="#" id="pgUndo" style="color:var(--bad)">desfazer</a>` : '';
+  $('#btnPgto').disabled = S.ro || !S.result?.resumo.length;
+  const u = $('#pgUndo'); if (u) u.onclick = async e => {
+    e.preventDefault(); if (S.ro) return;
+    const p = S.pagamentos[S.pagamentos.length - 1];
+    if (!await dialog('Desfazer o último envio para pagamento?', `Envio de ${dataBR(p.data)} para ${p.dentistas.map(x => x.nome).join(', ')}. As transações deixam de ter essa data de pagamento.`, { okText: 'Desfazer envio' })) return;
+    S.pagamentos.pop(); run(false); salvar(); toast('Envio para pagamento desfeito');
+  };
+}
+$('#btnPgto').onclick = () => {
+  if (S.ro || !S.result) return;
+  const R = S.result.resumo;
+  $('#pgData').value = new Date().toISOString().slice(0, 10);
+  $('#pgLista').innerHTML = `<table class="t"><colgroup><col style="width:8%"><col style="width:44%"><col style="width:18%"><col style="width:16%"><col style="width:14%"></colgroup>
+    <thead><tr><th></th><th>Dentista</th><th class="num">Comissão</th><th class="num">Linhas</th><th class="num">Já enviado</th></tr></thead><tbody>
+    ${R.map(r => { const p = pgtoDe(r.dentistaId); return `<tr><td><input type="checkbox" data-pgd="${r.dentistaId}" ${p ? '' : 'checked'} style="accent-color:var(--brand)"></td><td><b>${esc(r.nome)}</b></td><td class="num">${brl(r.comissao)}</td><td class="num">${n0(linhasDoDentista(r.dentistaId).length)}</td><td class="num">${p ? dataBR(p.data) : '—'}</td></tr>`; }).join('')}</tbody></table>`;
+  const upd = () => { const ids = [...document.querySelectorAll('[data-pgd]:checked')].map(x => x.dataset.pgd); $('#pgTotal').textContent = `${ids.length} dentista(s) · comissão ${brl(R.filter(r => ids.includes(r.dentistaId)).reduce((a, r) => a + r.comissao, 0))}`; };
+  document.querySelectorAll('[data-pgd]').forEach(x => x.onchange = upd);
+  $('#pgTodos').onclick = () => { document.querySelectorAll('[data-pgd]').forEach(x => x.checked = true); upd(); };
+  $('#pgNenhum').onclick = () => { document.querySelectorAll('[data-pgd]').forEach(x => x.checked = false); upd(); };
+  $('#pgMsg').textContent = ''; upd(); $('#pgModal').classList.add('on');
+};
+$('#pgCancel').onclick = () => $('#pgModal').classList.remove('on');
+$('#pgOk').onclick = () => {
+  const data = $('#pgData').value; const ids = [...document.querySelectorAll('[data-pgd]:checked')].map(x => x.dataset.pgd);
+  if (!data) { $('#pgMsg').textContent = 'Informe a data do pagamento.'; return; }
+  if (!ids.length) { $('#pgMsg').textContent = 'Selecione pelo menos um dentista.'; return; }
+  const R = S.result.resumo;
+  const linhas = [...new Set(ids.flatMap(id => linhasDoDentista(id).map(l => l.id)))];
+  S.pagamentos.push({ id: Date.now().toString(36), data, em: new Date().toISOString(), por: S.user?.email || '',
+    dentistas: ids.map(id => { const r = R.find(x => x.dentistaId === id); return { id, nome: r?.nome || dentById(id)?.nome, comissao: +(r?.comissao || 0).toFixed(2), producao: +(r?.producao || 0).toFixed(2) }; }), linhas });
+  $('#pgModal').classList.remove('on'); run(false); salvar();
+  toast(`${n0(linhas.length)} transação(ões) de ${ids.length} dentista(s) marcadas com pagamento em ${dataBR(data)}`);
+};
+
 const ORIG = [['todas', 'Todas'], ['dentista', 'Via guia'], ['atendimento', 'Via atendimento'], ['sistema', 'Via sistema'], ['manual', 'Manual'], ['nao_identificado', 'Sem executor'], ['conflito', 'Conflito'], ['split', 'Dividida'], ['regra', 'Por regra'], ['aprovada', 'Pendência aprovada'], ['alerta', 'Com alerta']];
 const ORIG_LBL = { dentista: 'Dentista (guia)', atendimento: 'Dentista (atendimento)', sistema: 'Sistema', manual: 'Manual', nao_identificado: 'Sem executor', conflito: 'Conflito', split: 'Dividida entre dentistas', regra: 'Regra por procedimento' };
 function filtered() {
@@ -587,7 +670,7 @@ function renderDet() {
     <td title="${esc(l.dentistaSistema)}" class="${GENERIC.test(l.dentistaSistema) ? 'muted' : ''}">${esc(l.dentistaSistema)}</td>
     <td title="${esc(S.overridesAuto[l.id] && l.origem === 'manual' ? 'Associado pelo botão Resp. no sistema' : (l.alerta || l.regraTxt || ORIG_LBL[l.origem]))}"><div class="row" style="gap:4px;flex-wrap:nowrap"><span class="dot" style="background:${{ dentista: 'var(--ok)', atendimento: '#3fae7f', sistema: 'var(--info)', manual: '#6b46c1', nao_identificado: 'var(--bad)', conflito: 'var(--warn)', split: '#2f6fb0', regra: '#0e6b63' }[l.origem]}"></span>
       <select class="inp" data-ov="${l.id}" style="flex:1;min-width:0">${l.origem === 'split' ? `<option value="_cur" selected>÷ ${esc(partesTxt(l.split))}</option>` : ''}${dentOpts(l.executorId, l.origem === 'conflito' ? '⚠ escolher…' : '— sem executor —')}<option value="_split">÷ Dividir guia entre dentistas…</option></select>${l.alerta ? '<span title="' + esc(l.alerta) + '" style="color:var(--warn);cursor:help">⚠</span>' : ''}</div></td>
-    <td class="num">${brl(l.valor)}</td></tr>`).join('') : `<tr><td colspan="8" class="empty">Nenhuma linha neste filtro.</td></tr>`}</tbody>`;
+    <td class="num">${brl(l.valor)}${linhaPgto(l.id) ? `<div style="font-size:10.5px;color:var(--ok);font-family:Manrope" title="Enviado para pagamento em ${dataBR(linhaPgto(l.id))}">pg ${dataBR(linhaPgto(l.id)).slice(0, 5)}</div>` : ''}</td></tr>`).join('') : `<tr><td colspan="8" class="empty">Nenhuma linha neste filtro.</td></tr>`}</tbody>`;
   $('#tblDet').querySelectorAll('[data-ov]').forEach(s => s.onchange = async () => {
     const l = S.result.linhas.find(x => x.id === +s.dataset.ov);
     const daDivergencia = l.origem === 'split' && !S.splits[l.guia];
@@ -656,9 +739,9 @@ function renderDiv() {
   const PG = 25, pages = Math.max(1, Math.ceil(dv.length / PG)); if (V.page >= pages) V.page = pages - 1;
   const sl = dv.slice(V.page * PG, (V.page + 1) * PG);
   $('#tblDiv').innerHTML = `<colgroup><col style="width:19%"><col style="width:27%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:14%"><col style="width:16%"></colgroup>
-  <thead><tr><th>Atendimento / paciente</th><th>Procedimentos (informado · sistema)</th><th class="num">Informado</th><th class="num">Sistema</th><th class="num">Dif.</th><th>Decisão</th><th>Atribuir a</th></tr></thead>
+  <thead><tr><th>Atendimento · guia / paciente</th><th>Procedimentos (informado · sistema)</th><th class="num">Informado</th><th class="num">Sistema</th><th class="num">Dif.</th><th>Decisão</th><th>Atribuir a</th></tr></thead>
   <tbody>${sl.length ? sl.map(d => { const r = d.resolucao || {}; const dec = r.decisao || 'pendente'; const alvo = r.dentistaId ?? d.informanteId; return `<tr>
-    <td class="two"><span class="l"><span class="mono" style="font-size:12px">${esc(d.atendimento || d.guia)}</span> · ${esc(d.paciente || '—')}</span><small title="Guia(s): ${esc(d.guia)}">informado por ${esc(dentById(d.informanteId)?.nome || '—')}${d.data ? ' · ' + d.data.toLocaleDateString('pt-BR').slice(0, 5) : ''}</small></td>
+    <td class="two"><span class="l"><span class="mono" style="font-size:12px">${esc(d.atendimento || d.guia)}</span> · ${esc(d.paciente || '—')}</span><small title="Guia(s) informada(s): ${esc(d.guia)}">${d.atendimento ? 'guia ' + esc(d.guia) + ' · ' : ''}${esc(dentById(d.informanteId)?.nome || '—')}${d.data ? ' · ' + d.data.toLocaleDateString('pt-BR').slice(0, 5) : ''}</small></td>
     <td class="two"><span class="l" title="${esc(d.procInformado)}">${esc(d.procInformado || '—')}</span><small title="${esc(d.procSistema)}">${d.procSistema ? esc(d.procSistema) : 'nenhuma linha do sistema para este dentista'}${d.pendentes ? ` · ${d.pendentes} linha(s) sem executor` : ''}</small></td>
     <td class="num">${brl(d.informado)}</td><td class="num">${brl(d.sistema)}</td>
     <td class="num" style="color:${d.dif > 0 ? 'var(--bad)' : 'var(--info)'}">${brl(d.dif)}</td>
@@ -813,7 +896,7 @@ function renderPend() {
 /* somente leitura quando fechada */
 function applyRO() {
   if (!S.ro) { ['#tolDiv', '#bulkSis', '#bulkInf', '#bulkNE', '#fileSys', '#fileDen'].forEach(x => { const el = $(x); if (el) el.disabled = false; }); return; }
-  document.querySelectorAll('#tab-conc input, #tab-conc select, #tab-res select, #tab-res input:not(#fBusca), #btnRun, #bulkSis, #bulkInf, #bulkNE, [data-rm], [data-dse]').forEach(el => { if (el.id !== 'compMes') el.disabled = true; });
+  document.querySelectorAll('#tab-conc input, #tab-conc select, #tab-res select, #tab-res input:not(#fBusca), #btnRun, #btnPgto, #bulkSis, #bulkInf, #bulkNE, [data-rm], [data-dse]').forEach(el => { if (el.id !== 'compMes') el.disabled = true; });
 }
 function renderAllConc() { applyRO(); renderSys(); renderSit(); renderDen(); checkReady(); renderResult(); renderSugestoes(); renderRegras(); applyRO(); }
 
@@ -825,12 +908,12 @@ $('#btnExport').onclick = () => {
 function exportarExcel(R, nomeArquivo) {
   const nm = id => dentById(id)?.nome || '';
   const wb = XLSX.utils.book_new();
-  const res = R.resumo.map(r => ({ Dentista: r.nome, Especialidade: r.especialidade, Remuneração: FORMAS[r.forma], 'Valor/%': r.valorRef, Guias: r.guias, Procedimentos: r.procs, Produção: +(+r.producao).toFixed(2), Ajustes: +(+r.ajustes || 0).toFixed(2), 'Base comissionável': +(+r.base).toFixed(2), Diárias: r.forma === 'diaria' ? r.diarias : '', Comissão: +(+r.comissao).toFixed(2) }));
+  const res = R.resumo.map(r => ({ Dentista: r.nome, Especialidade: r.especialidade, Remuneração: FORMAS[r.forma], 'Valor/%': r.valorRef, Guias: r.guias, Procedimentos: r.procs, Produção: +(+r.producao).toFixed(2), Ajustes: +(+r.ajustes || 0).toFixed(2), 'Base comissionável': +(+r.base).toFixed(2), Diárias: r.forma === 'diaria' ? r.diarias : '', Comissão: +(+r.comissao).toFixed(2), 'Enviado p/ pgto': r.dentistaId && S.pagamentos ? dataBR(pgtoDe(r.dentistaId)?.data || '') : '' }));
   res.push({ Dentista: 'TOTAL', Produção: +R.resumo.reduce((a, r) => a + +r.producao, 0).toFixed(2), Ajustes: +R.resumo.reduce((a, r) => a + (+r.ajustes || 0), 0).toFixed(2), 'Base comissionável': +R.resumo.reduce((a, r) => a + +r.base, 0).toFixed(2), Comissão: +R.resumo.reduce((a, r) => a + +r.comissao, 0).toFixed(2) });
   const ws1 = XLSX.utils.json_to_sheet(res); ws1['!cols'] = [28, 14, 14, 9, 8, 12, 13, 12, 16, 8, 13].map(w => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, ws1, 'Comissões');
   if (R.linhas) {
-    const det = R.linhas.map(l => ({ Data: l.data ? l.data.toLocaleDateString('pt-BR') : (l.d || ''), Guia: l.guiaRaw ?? l.g, Atendimento: l.atendimento ?? l.a, Procedimento: l.procedimento ?? l.pr, Paciente: l.paciente ?? l.p, Situação: l.situacao ?? l.s, 'Resp. no sistema': l.dentistaSistema ?? l.ds, Executor: l.en ?? (l.origem === 'split' ? 'Dividida: ' + partesTxt(l.split) : nm(l.executorId)), Origem: ORIG_LBL[l.origem ?? l.o], Comissionável: (l.comissionavel ?? l.c) ? 'Sim' : 'Não', Valor: l.valor ?? l.v, Observação: l.alerta || '' }));
+    const det = R.linhas.map(l => ({ Data: l.data ? l.data.toLocaleDateString('pt-BR') : (l.d || ''), Guia: l.guiaRaw ?? l.g, Atendimento: l.atendimento ?? l.a, Procedimento: l.procedimento ?? l.pr, Paciente: l.paciente ?? l.p, Situação: l.situacao ?? l.s, 'Resp. no sistema': l.dentistaSistema ?? l.ds, Executor: l.en ?? (l.origem === 'split' ? 'Dividida: ' + partesTxt(l.split) : nm(l.executorId)), Origem: ORIG_LBL[l.origem ?? l.o], Comissionável: (l.comissionavel ?? l.c) ? 'Sim' : 'Não', Valor: l.valor ?? l.v, 'Data pgto': l.id != null && S.pagamentos ? dataBR(linhaPgto(l.id) || '') : '', Observação: l.alerta || '' }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(det), 'Detalhamento');
     if (R.pendentes?.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(R.pendentes.map(l => ({ Data: l.data ? l.data.toLocaleDateString('pt-BR') : '', Guia: l.guiaRaw, Atendimento: l.atendimento, Paciente: l.paciente, Procedimento: l.procedimento, Executor: execTxt(l), 'Motivo da pendência': l.obs || '', Status: l.status || l.situacao, Valor: l.valor, 'Pgto aprovado': l.aprovado ? 'Sim' : 'Não', 'Aprovado em': S.aprovadas[l.id]?.em ? new Date(S.aprovadas[l.id].em).toLocaleString('pt-BR') : '', 'Aprovado por': S.aprovadas[l.id]?.por || '' }))), 'Guias pendentes');
   }

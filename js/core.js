@@ -391,6 +391,46 @@ const Core = (() => {
     return { linhas: mov, resumo: resumoArr, naoEncontradas, divergencias, extras, pendentes, tot };
   }
 
-  return { norm, nameKey, guiaKey, toNum, toDate, dayKey, findHeaderRow, mapColumns, analyzeSystemWorkbook, buildSystemRows, analyzeDentistWorkbook, limpaTexto, matchDentist, guessDentistFromFilename, guessDentistFromText, reconcile };
+
+  /* ===== Conferência por dentista: informado na planilha × apurado no sistema ===== */
+  function compararDentista({ dentistaId, dentistFiles, result, systemRows, tol = 1 }) {
+    const guiaAt = new Map(); systemRows.forEach(r => { if (r.atendimento && !guiaAt.has(r.guia)) guiaAt.set(r.guia, r.atendimento); });
+    const sysGuias = new Set(systemRows.map(r => r.guia)), sysAt = new Set(systemRows.map(r => r.atendimento).filter(Boolean));
+    const keyGuia = g => guiaAt.has(g) ? 'a:' + guiaAt.get(g) : 'g:' + g;
+    const M = new Map();
+    const get = k => { if (!M.has(k)) M.set(k, { k, informado: 0, apurado: 0, temInf: false, temSis: false, paciente: '', data: null, guiasInf: new Set(), guiasSis: new Set(), procInf: [], procSis: [], linhaIds: [], pend: false }); return M.get(k); };
+    const files = dentistFiles.filter(f => f.dentistaId === dentistaId);
+    files.forEach(f => (f.itens || []).forEach(it => {
+      const k = it.guia && sysGuias.has(it.guia) ? keyGuia(it.guia) : it.atend && sysAt.has(it.atend) ? 'a:' + it.atend : 'x:' + (it.guia || it.atend);
+      const o = get(k); o.temInf = true; o.informado += it.valor || 0; if (it.guiaRaw) o.guiasInf.add(it.guiaRaw); if (it.procedimento) o.procInf.push(it.procedimento);
+      o.paciente = o.paciente || it.paciente; o.data = o.data || it.data;
+    }));
+    result.linhas.forEach(l => {
+      if (l.executorId !== dentistaId) return;
+      const o = get(l.atendimento ? 'a:' + l.atendimento : 'g:' + l.guia);
+      o.temSis = true; o.apurado += l.valor; o.guiasSis.add(l.guiaRaw); o.procSis.push(l.procedimento); o.linhaIds.push(l.id);
+      o.paciente = o.paciente || l.paciente; o.data = o.data || l.data;
+    });
+    result.extras.forEach(e => {
+      if (e.dentistaId !== dentistaId) return;
+      const k = e.tipo === 'split' && e.guia ? keyGuia(e.guia) : e.tipo === 'lancamento' ? 'x:' + e.ref : sysAt.has(e.ref) ? 'a:' + e.ref : 'g:' + e.ref;
+      const o = get(k); o.temSis = true; o.apurado += e.valor; o.procSis.push(e.descricao + (e.tipo === 'ajuste' ? ' (ajuste)' : ''));
+      o.paciente = o.paciente || e.paciente;
+    });
+    const pendKeys = new Set((result.pendentes || []).filter(l => l.pend).map(l => l.atendimento ? 'a:' + l.atendimento : 'g:' + l.guia));
+    const rows = [...M.values()].map(o => {
+      let status;
+      if (o.temInf && o.temSis) status = Math.abs(o.informado - o.apurado) <= Math.max(0.05, tol) ? 'ok' : 'dif';
+      else if (o.temInf) status = o.k.startsWith('x:') ? 'nao_localizado' : pendKeys.has(o.k) ? 'pendente' : 'outro';
+      else status = 'so_sistema';
+      return { ...o, guiasInf: [...o.guiasInf], guiasSis: [...o.guiasSis], ref: o.k.slice(2), tipoRef: o.k[0], dif: o.informado - o.apurado, status };
+    }).sort((a, b) => (a.status === 'ok') - (b.status === 'ok') || Math.abs(b.dif) - Math.abs(a.dif));
+    const soma = k => rows.reduce((a, r) => a + r[k], 0);
+    const cont = st => rows.filter(r => r.status === st).length;
+    return { rows, temPlanilha: files.length > 0, informado: soma('informado'), apurado: soma('apurado'), dif: soma('informado') - soma('apurado'),
+      ok: cont('ok'), difs: cont('dif'), soSistema: cont('so_sistema'), outro: cont('outro'), pendente: cont('pendente'), naoLocalizado: cont('nao_localizado') };
+  }
+
+  return { norm, nameKey, guiaKey, toNum, toDate, dayKey, findHeaderRow, mapColumns, analyzeSystemWorkbook, buildSystemRows, analyzeDentistWorkbook, limpaTexto, compararDentista, matchDentist, guessDentistFromFilename, guessDentistFromText, reconcile };
 })();
 if (typeof module !== 'undefined') module.exports = Core;
