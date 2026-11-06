@@ -202,7 +202,7 @@ const Core = (() => {
         Se não bater, fica pendente na divergência para o usuário decidir.
      4) Sem nenhuma planilha → usa o dentista do sistema, se estiver cadastrado.
      5) Decisões do usuário: resoluções de divergência, lançamentos não localizados e troca linha a linha. */
-  function reconcile({ systemRows, dentistFiles, dentistas, especialidades, situacoesBase, overrides = {}, diariasOverride = {}, resolucoes = {}, lancamentos = {}, splits = {}, tolAtend = 1, tolDiv = 1 }) {
+  function reconcile({ systemRows, dentistFiles, dentistas, especialidades, situacoesBase, overrides = {}, diariasOverride = {}, resolucoes = {}, lancamentos = {}, splits = {}, regrasProc = [], tolAtend = 1, tolDiv = 1 }) {
     const byId = Object.fromEntries(dentistas.map(d => [d.id, d]));
     const files = dentistFiles.filter(f => f.dentistaId);
     const add = (m, k, v) => { if (!m.has(k)) m.set(k, new Set()); m.get(k).add(v); };
@@ -225,17 +225,25 @@ const Core = (() => {
     const sysDent = name => (name in sysCache) ? sysCache[name] : (sysCache[name] = matchDentist(name, dentistas));
     const baseSet = new Set(situacoesBase);
 
+    // guias com status/situação Pendente ficam FORA do movimento (só aparecem na lista de pendentes)
+    const ehPendente = r => /pend/i.test(r.situacao || '') || /pend/i.test(r.status || '');
     // ---- etapa 1: atribuição automática
     const linhas = systemRows.map(r => {
       const cands = [...(guiaToDent.get(r.guia) || [])];
       let exec = null, origem = 'nao_identificado', alerta = '', atPendente = null;
       if (cands.length === 1) { exec = cands[0]; origem = 'dentista'; }
       else if (cands.length > 1) { origem = 'conflito'; alerta = 'Guia informada por: ' + cands.map(id => byId[id]?.nome).join(', '); }
-      return { ...r, executorId: exec, origem, alerta, candidatos: cands, atPendente };
+      return { ...r, executorId: exec, origem, alerta, candidatos: cands, atPendente, pend: ehPendente(r) };
+    });
+    // regras automáticas por procedimento (ex.: Consulta odontológica → CLINICA) têm prioridade sobre os cruzamentos
+    const regras = regrasProc.filter(rg => rg.termo && byId[rg.dentistaId]).map(rg => ({ ...rg, k: norm(rg.termo) }));
+    if (regras.length) linhas.forEach(l => {
+      const p = norm(l.procedimento); const rg = regras.find(x => p.includes(x.k));
+      if (rg) { l.executorId = rg.dentistaId; l.origem = 'regra'; l.alerta = ''; l.regraTxt = `Regra: "${rg.termo}" → ${byId[rg.dentistaId].nome}`; l.candidatos = []; l.regra = true; }
     });
     // atendimento: candidatos = linhas do atendimento sem informante pela guia
     atInf.forEach((infs, at) => {
-      const ls = linhas.filter(l => l.atendimento === at && !l.candidatos.length);
+      const ls = linhas.filter(l => l.atendimento === at && !l.candidatos.length && !l.regra && !l.pend);
       if (!ls.length) return;
       const soma = ls.reduce((a, l) => a + l.valor, 0);
       if (infs.length === 1) {
@@ -266,7 +274,9 @@ const Core = (() => {
       });
       inf.forEach((o, k) => {
         const tp = k[0], key = k.slice(2);
-        const afetadas = linhas.filter(l => (tp === 'g' ? l.guia === key : l.atendimento === key) && (l.executorId === f.dentistaId || (!l.executorId && l.origem !== 'conflito')));
+        const doKey = linhas.filter(l => (tp === 'g' ? l.guia === key : l.atendimento === key));
+        if (doKey.length && doKey.every(l => l.pend)) return; // tudo pendente: fora do movimento
+        const afetadas = doKey.filter(l => !l.pend && !l.regra && (l.executorId === f.dentistaId || (!l.executorId && l.origem !== 'conflito')));
         const sis = afetadas.reduce((a, l) => a + l.valor, 0);
         if (Math.abs(o.valor - sis) <= Math.max(0.05, tolDiv)) {
           afetadas.forEach(l => { if (!l.executorId) { l.executorId = f.dentistaId; l.origem = 'atendimento'; l.atPendente = null; l.alerta = 'Mesmo atendimento de guia informada; valor total confere'; } });
@@ -304,11 +314,13 @@ const Core = (() => {
       if (alvo && r.decisao === 'informado' && Math.abs(d.dif) > 0.004) extras.push({ tipo: 'ajuste', dentistaId: alvo, valor: d.dif, data: d.data || null, ref: d.atendimento || d.guia, paciente: d.paciente, descricao: 'Ajuste p/ valor informado' });
     });
     linhas.forEach(l => {
-      if (overrides[l.id] !== undefined && l.origem !== 'split') { l.executorId = overrides[l.id] || null; l.origem = l.executorId ? 'manual' : 'nao_identificado'; l.atPendente = null; }
+      if (overrides[l.id] !== undefined && l.origem !== 'split' && !l.pend) { l.executorId = overrides[l.id] || null; l.origem = l.executorId ? 'manual' : 'nao_identificado'; l.atPendente = null; }
     });
     // divisão de guia definida na linha (vale para todas as linhas da guia)
-    linhas.forEach(l => { const sp = splits[l.guia]; if (sp && partesOk(sp.partes) && l.origem !== 'split') dividirLinha(l, sp.partes, 'Guia dividida'); });
-    linhas.forEach(l => { l.comissionavel = inBase(l) && !!l.executorId; });
+    linhas.forEach(l => { const sp = splits[l.guia]; if (sp && partesOk(sp.partes) && !l.pend && l.origem !== 'split' && !(l.regra && overrides[l.id] === undefined)) dividirLinha(l, sp.partes, 'Guia dividida'); });
+    linhas.forEach(l => { l.comissionavel = !l.pend && inBase(l) && !!l.executorId; });
+    const mov = linhas.filter(l => !l.pend);
+    const pendentes = linhas.filter(l => l.pend);
 
     // ---- lançamentos informados e não localizados no sistema
     const naoEncontradas = [];
@@ -325,7 +337,7 @@ const Core = (() => {
     const espById = Object.fromEntries(especialidades.map(e => [e.id, e]));
     const resumo = {};
     const get = d => resumo[d.id] || (resumo[d.id] = { dentista: d, guias: new Set(), procs: 0, producao: 0, base: 0, ajustes: 0, divididas: 0, dias: new Set(), pendente: 0 });
-    linhas.forEach(l => {
+    mov.forEach(l => {
       const d = byId[l.executorId]; if (!d) return;
       const s = get(d); s.guias.add(l.guia); s.procs++; s.producao += l.valor;
       if (l.comissionavel) { s.base += l.valor; if (l.dia) s.dias.add(l.dia); } else s.pendente += l.valor;
@@ -353,28 +365,28 @@ const Core = (() => {
 
     const divPend = divergencias.filter(d => !d.resolucao || d.resolucao.decisao === 'pendente').length;
     const tot = {
-      linhas: linhas.length, guias: sysGuias.size,
-      producao: linhas.reduce((a, l) => a + l.valor, 0),
+      linhas: mov.length, guias: new Set(mov.map(l => l.guia)).size,
+      producao: mov.reduce((a, l) => a + l.valor, 0),
       base: resumoArr.reduce((a, r) => a + r.base, 0),
       comissao: resumoArr.reduce((a, r) => a + r.comissao, 0),
       ajustes: extras.filter(e => e.tipo !== 'split').reduce((a, e) => a + e.valor, 0),
-      identificadas: linhas.filter(l => l.executorId || l.origem === 'split').length,
-      divididas: linhas.filter(l => l.origem === 'split').length,
-      viaDentista: linhas.filter(l => l.origem === 'dentista' || l.origem === 'atendimento').length,
-      viaAtend: linhas.filter(l => l.origem === 'atendimento').length,
-      viaSistema: linhas.filter(l => l.origem === 'sistema').length,
-      manual: linhas.filter(l => l.origem === 'manual').length,
-      naoIdent: linhas.filter(l => !l.executorId && l.origem !== 'conflito' && l.origem !== 'split').length,
-      conflitos: linhas.filter(l => l.origem === 'conflito' && !l.executorId).length,
-      naoIdentValor: linhas.filter(l => !l.executorId && l.origem !== 'split').reduce((a, l) => a + l.valor, 0),
+      identificadas: mov.filter(l => l.executorId || l.origem === 'split').length,
+      divididas: mov.filter(l => l.origem === 'split').length,
+      viaDentista: mov.filter(l => l.origem === 'dentista' || l.origem === 'atendimento').length,
+      viaAtend: mov.filter(l => l.origem === 'atendimento').length,
+      viaSistema: mov.filter(l => l.origem === 'sistema').length,
+      viaRegra: mov.filter(l => l.origem === 'regra').length,
+      manual: mov.filter(l => l.origem === 'manual').length,
+      naoIdent: mov.filter(l => !l.executorId && l.origem !== 'conflito' && l.origem !== 'split').length,
+      conflitos: mov.filter(l => l.origem === 'conflito' && !l.executorId).length,
+      naoIdentValor: mov.filter(l => !l.executorId && l.origem !== 'split').reduce((a, l) => a + l.valor, 0),
       naoEncontradas: naoEncontradas.length,
       neAbertos: naoEncontradas.filter(x => !x.decisao?.dentistaId && !x.decisao?.descartado).length,
       divergencias: divergencias.length, divPend,
     };
     tot.pendencias = tot.divPend + tot.neAbertos + tot.conflitos;
-    const pendentes = linhas.filter(l => /pend/i.test(l.situacao) || /pend/i.test(l.status));
     tot.pendentesQtd = pendentes.length; tot.pendentesValor = pendentes.reduce((a, l) => a + l.valor, 0);
-    return { linhas, resumo: resumoArr, naoEncontradas, divergencias, extras, pendentes, tot };
+    return { linhas: mov, resumo: resumoArr, naoEncontradas, divergencias, extras, pendentes, tot };
   }
 
   return { norm, nameKey, guiaKey, toNum, toDate, dayKey, findHeaderRow, mapColumns, analyzeSystemWorkbook, buildSystemRows, analyzeDentistWorkbook, limpaTexto, matchDentist, guessDentistFromFilename, guessDentistFromText, reconcile };

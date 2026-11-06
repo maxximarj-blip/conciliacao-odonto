@@ -15,7 +15,7 @@ const compLabel = c => { if (!c) return ''; const [y, m] = String(c).split('-');
 const CFG = window.APP_CONFIG || {};
 const S = {
   user: null, perfil: null,
-  cad: { dentistas: [], especialidades: [] },
+  cad: { dentistas: [], especialidades: [], regras: [] },
   conc: null,          // linha da tabela conciliacoes (ou {competencia, novo:true})
   ro: false,           // competência fechada → somente leitura
   sys: null, denFiles: [],
@@ -180,9 +180,11 @@ async function loadCadastro() {
     q(sb.from('especialidades').select('*').order('criado_em'), 'Especialidades'),
     q(sb.from('dentistas').select('*').order('nome'), 'Dentistas'),
   ]);
+  try { S.cad.regras = (await q(sb.from('regras_procedimento').select('*').order('criado_em'), 'Regras')).map(r => ({ id: r.id, termo: r.termo, dentistaId: r.dentista_id, ativo: r.ativo })); }
+  catch (e) { S.cad.regras = []; console.warn('Tabela regras_procedimento ausente — rode o schema.sql', e); }
   S.cad.especialidades = esp.map(e => ({ id: e.id, nome: e.nome, forma: e.forma, valor: Number(e.valor), ativo: e.ativo }));
   S.cad.dentistas = den.map(d => ({ id: d.id, nome: d.nome, aliases: d.aliases || '', especialidadeId: d.especialidade_id, forma: d.forma || null, valor: d.valor == null ? null : Number(d.valor), ativo: d.ativo }));
-  renderDentistas(); renderEsp(); renderDen(); checkReady();
+  renderDentistas(); renderEsp(); renderDen(); renderRegras(); checkReady();
 }
 async function cadChanged() {
   await loadCadastro();
@@ -346,7 +348,9 @@ function buildSys(sitSalvas) {
   S.sys.rows = Core.buildSystemRows(sh.rows, S.sys.headerIndex, S.sys.map);
   S.sys.guiaSet = new Set(S.sys.rows.map(r => r.guia));
   S.sys.atSet = new Set(S.sys.rows.map(r => r.atendimento).filter(Boolean));
-  S.situacoes = [...new Set(S.sys.rows.map(r => r.situacao))];
+  const ehPend = r => /pend/i.test(r.situacao || '') || /pend/i.test(r.status || '');
+  S.sys.pendRows = S.sys.rows.filter(ehPend);
+  S.situacoes = [...new Set(S.sys.rows.filter(r => !ehPend(r)).map(r => r.situacao))];
   S.sitBase = Array.isArray(sitSalvas) ? new Set(sitSalvas.filter(x => S.situacoes.includes(x))) : new Set(S.situacoes.filter(s => !/pend|glos|negad|cancel|recus/i.test(s)));
   renderSit();
 }
@@ -354,8 +358,8 @@ const regrasAtuaisFull = () => ({ ...regrasAtuais(), aba: S.sys?.sel, map: S.sys
 function renderSys() {
   const el = $('#sysInfo');
   if (!S.sys) { el.innerHTML = ''; return; }
-  const rows = S.sys.rows;
-  const ds = rows.map(r => r.data).filter(Boolean).sort((a, b) => a - b);
+  const rows = S.sys.rows.filter(r => !S.sys.pendRows.includes(r));
+  const ds = S.sys.rows.map(r => r.data).filter(Boolean).sort((a, b) => a - b);
   const per = ds.length ? `${ds[0].toLocaleDateString('pt-BR')} a ${ds[ds.length - 1].toLocaleDateString('pt-BR')}` : '—';
   const sh = S.sys.sheets.find(s => s.name === S.sys.sel);
   const header = sh.rows[S.sys.headerIndex] || [];
@@ -364,7 +368,8 @@ function renderSys() {
   el.innerHTML = `
     <div class="row" style="margin-top:14px"><span class="chip ok" title="Guardado no histórico">✓ ${esc(S.sys.fileName)}</span><span class="sp"></span>
       <label class="fld" style="width:230px"><span>Aba usada</span><select class="inp" id="sysSheet">${S.sys.analysis.filter(a => a.score > 0).map(a => `<option ${a.name === S.sys.sel ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></label></div>
-    <div class="meta"><div><span>Linhas</span><b>${n0(rows.length)}</b></div><div><span>Guias</span><b>${n0(S.sys.guiaSet.size)}</b></div><div><span>Produção</span><b>${brl(rows.reduce((a, r) => a + r.valor, 0))}</b></div><div><span>Período</span><b style="font-size:12px">${per}</b></div></div>
+    <div class="meta"><div><span>Linhas no movimento</span><b>${n0(rows.length)}</b></div><div><span>Guias</span><b>${n0(new Set(rows.map(r => r.guia)).size)}</b></div><div><span>Produção</span><b>${brl(rows.reduce((a, r) => a + r.valor, 0))}</b></div><div><span>Período</span><b style="font-size:12px">${per}</b></div></div>
+    ${S.sys.pendRows.length ? `<div class="notice warn" style="margin-top:10px">${n0(S.sys.pendRows.length)} linha(s) com status <b>Pendente</b> (${brl(S.sys.pendRows.reduce((a, r) => a + r.valor, 0))}) ficam <b>fora do movimento</b> e da comissão. Veja a aba <b>Guias pendentes</b>.</div>` : ''}
     <div class="chips" style="margin-top:10px">${Object.keys(F).map(k => `<span class="chip ${S.sys.map[k] !== undefined ? 'ok' : 'miss'}">${S.sys.map[k] !== undefined ? '✓' : '✕'} ${F[k].replace(' *', '')}</span>`).join('')}</div>
     <details class="map"><summary>Ajustar colunas manualmente</summary><div class="mapgrid">${Object.keys(F).map(k => `<label class="fld"><span>${F[k]}</span><select class="inp" data-map="${k}">${colOpts(k)}</select></label>`).join('')}</div></details>`;
   const afterChange = () => { S.denFiles.forEach(df => analyzeDen(df, false)); renderAllConc(); if (S.result) run(false); salvarRegras(); };
@@ -376,9 +381,10 @@ function renderSit() {
   const box = $('#sitBox');
   if (!S.situacoes.length) { box.innerHTML = '<span class="muted">Carregue a planilha do sistema.</span>'; return; }
   box.innerHTML = S.situacoes.map(s => {
-    const n = S.sys.rows.filter(r => r.situacao === s); const v = n.reduce((a, r) => a + r.valor, 0);
+    const n = S.sys.rows.filter(r => r.situacao === s && !S.sys.pendRows.includes(r)); const v = n.reduce((a, r) => a + r.valor, 0);
     return `<label class="chk"><input type="checkbox" data-sit="${esc(s)}" ${S.sitBase.has(s) ? 'checked' : ''}>${esc(s)} <span class="muted mono" style="font-size:11px">${n.length} · ${brl(v)}</span></label>`;
   }).join('');
+  if (S.sys.pendRows.length) box.insertAdjacentHTML('beforeend', `<span class="chip" title="Status Pendente nunca entra no movimento">🔒 Pendentes: fora do movimento · ${n0(S.sys.pendRows.length)} · ${brl(S.sys.pendRows.reduce((a, r) => a + r.valor, 0))}</span>`);
   box.querySelectorAll('[data-sit]').forEach(c => c.onchange = () => { c.checked ? S.sitBase.add(c.dataset.sit) : S.sitBase.delete(c.dataset.sit); if (S.result) run(false); salvar(); });
   applyRO();
 }
@@ -456,7 +462,7 @@ function run(go) {
   if (!S.sys) return;
   S.result = Core.reconcile({
     systemRows: S.sys.rows, dentistFiles: S.denFiles.filter(f => f.dentistaId), dentistas: S.cad.dentistas, especialidades: S.cad.especialidades,
-    situacoesBase: [...S.sitBase], overrides: S.overrides, diariasOverride: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, tolDiv: Math.max(0, +$('#tolDiv').value || 0),
+    situacoesBase: [...S.sitBase], overrides: S.overrides, diariasOverride: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, regrasProc: S.cad.regras.filter(r => r.ativo && dentById(r.dentistaId)?.ativo), tolDiv: Math.max(0, +$('#tolDiv').value || 0),
   });
   renderResult(); renderCompBar();
   if (go) { S.view.page = 0; showTab('res'); }
@@ -500,8 +506,8 @@ function renderResumo() {
   });
   $('#tblResumo').querySelectorAll('[data-dia]').forEach(i => i.onchange = () => { S.diarias[i.dataset.dia] = Math.max(0, +i.value || 0); run(false); salvar(); });
 }
-const ORIG = [['todas', 'Todas'], ['dentista', 'Via guia'], ['atendimento', 'Via atendimento'], ['sistema', 'Via sistema'], ['manual', 'Manual'], ['nao_identificado', 'Sem executor'], ['conflito', 'Conflito'], ['split', 'Dividida'], ['alerta', 'Com alerta']];
-const ORIG_LBL = { dentista: 'Dentista (guia)', atendimento: 'Dentista (atendimento)', sistema: 'Sistema', manual: 'Manual', nao_identificado: 'Sem executor', conflito: 'Conflito', split: 'Dividida entre dentistas' };
+const ORIG = [['todas', 'Todas'], ['dentista', 'Via guia'], ['atendimento', 'Via atendimento'], ['sistema', 'Via sistema'], ['manual', 'Manual'], ['nao_identificado', 'Sem executor'], ['conflito', 'Conflito'], ['split', 'Dividida'], ['regra', 'Por regra'], ['alerta', 'Com alerta']];
+const ORIG_LBL = { dentista: 'Dentista (guia)', atendimento: 'Dentista (atendimento)', sistema: 'Sistema', manual: 'Manual', nao_identificado: 'Sem executor', conflito: 'Conflito', split: 'Dividida entre dentistas', regra: 'Regra por procedimento' };
 function filtered() {
   const { orig, dent, q: qs } = S.view; const qq = Core.norm(qs);
   return S.result.linhas.filter(l =>
@@ -534,11 +540,11 @@ function renderDet() {
     <td title="${esc(l.paciente)}${l.convenio ? ' · ' + esc(l.convenio) : ''}">${esc(l.paciente || '—')}</td>
     <td><span class="${S.sitBase.has(l.situacao) ? '' : 'muted'}">${esc(l.situacao)}</span></td>
     <td title="${esc(l.dentistaSistema)}" class="${GENERIC.test(l.dentistaSistema) ? 'muted' : ''}">${esc(l.dentistaSistema)}</td>
-    <td title="${esc(l.alerta || ORIG_LBL[l.origem])}"><div class="row" style="gap:4px;flex-wrap:nowrap"><span class="dot" style="background:${{ dentista: 'var(--ok)', atendimento: '#3fae7f', sistema: 'var(--info)', manual: '#6b46c1', nao_identificado: 'var(--bad)', conflito: 'var(--warn)', split: '#2f6fb0' }[l.origem]}"></span>
+    <td title="${esc(l.alerta || l.regraTxt || ORIG_LBL[l.origem])}"><div class="row" style="gap:4px;flex-wrap:nowrap"><span class="dot" style="background:${{ dentista: 'var(--ok)', atendimento: '#3fae7f', sistema: 'var(--info)', manual: '#6b46c1', nao_identificado: 'var(--bad)', conflito: 'var(--warn)', split: '#2f6fb0', regra: '#0e6b63' }[l.origem]}"></span>
       <select class="inp" data-ov="${l.id}" style="flex:1;min-width:0">${l.origem === 'split' ? `<option value="_cur" selected>÷ ${esc(partesTxt(l.split))}</option>` : ''}${dentOpts(l.executorId, l.origem === 'conflito' ? '⚠ escolher…' : '— sem executor —')}<option value="_split">÷ Dividir guia entre dentistas…</option></select>${l.alerta ? '<span title="' + esc(l.alerta) + '" style="color:var(--warn);cursor:help">⚠</span>' : ''}</div></td>
     <td class="num">${brl(l.valor)}</td></tr>`).join('') : `<tr><td colspan="8" class="empty">Nenhuma linha neste filtro.</td></tr>`}</tbody>`;
   $('#tblDet').querySelectorAll('[data-ov]').forEach(s => s.onchange = async () => {
-    const l = S.result.linhas[+s.dataset.ov];
+    const l = S.result.linhas.find(x => x.id === +s.dataset.ov);
     const daDivergencia = l.origem === 'split' && !S.splits[l.guia];
     if (s.value === '_cur') return;
     if (s.value === '_split') {
@@ -697,12 +703,9 @@ function renderPend() {
   if (!R) { cnt.style.display = 'none'; return; }
   const P = R.pendentes;
   cnt.textContent = P.length; cnt.style.display = P.length ? '' : 'none';
-  const sits = [...new Set(P.map(l => l.situacao))];
-  const entra = sits.filter(x => S.sitBase.has(x));
   const guias = new Set(P.map(l => l.guia)).size;
   $('#pendChips').innerHTML = `<span class="chip">${n0(P.length)} linhas · ${n0(guias)} guias</span><span class="chip"><b>${brl(R.tot.pendentesValor)}</b></span>
-    <span class="chip ${entra.length ? 'ok' : 'miss'}">${entra.length ? '✓ Entram na base de comissão (' + entra.join(', ') + ')' : '✕ Não entram na base de comissão'}</span>
-    <span class="chip">Para mudar, marque/desmarque a situação em Conciliação → Regras do cálculo</span>`;
+    <span class="chip miss">🔒 Fora do movimento e da comissão</span><span class="chip">Quando a guia for regularizada no sistema, ela entra no movimento da competência em que for faturada</span>`;
   // por executor
   const byE = {};
   P.forEach(l => {
@@ -743,7 +746,7 @@ function applyRO() {
   if (!S.ro) { ['#tolDiv', '#bulkSis', '#bulkInf', '#bulkNE', '#fileSys', '#fileDen'].forEach(x => { const el = $(x); if (el) el.disabled = false; }); return; }
   document.querySelectorAll('#tab-conc input, #tab-conc select, #tab-res select, #tab-res input:not(#fBusca), #btnRun, #bulkSis, #bulkInf, #bulkNE, [data-rm], [data-dse]').forEach(el => { if (el.id !== 'compMes') el.disabled = true; });
 }
-function renderAllConc() { applyRO(); renderSys(); renderSit(); renderDen(); checkReady(); renderResult(); renderSugestoes(); applyRO(); }
+function renderAllConc() { applyRO(); renderSys(); renderSit(); renderDen(); checkReady(); renderResult(); renderSugestoes(); renderRegras(); applyRO(); }
 
 /* ===================== exportar ===================== */
 $('#btnExport').onclick = () => {
@@ -842,6 +845,34 @@ function renderSugestoes() {
   el.querySelectorAll('[data-sug]').forEach(b => b.onclick = () => { resetForm(); $('#dNome').value = b.dataset.sug; showTab('dent'); $('#dEsp').focus(); });
 }
 
+/* ===================== regras por procedimento ===================== */
+function renderRegras() {
+  $('#rgDent').innerHTML = dentOpts('', '— escolha o dentista —');
+  const sug = S.sys ? [...new Set(S.sys.rows.map(r => r.procedimento).filter(Boolean))].sort() : [];
+  $('#rgSug').innerHTML = sug.slice(0, 300).map(p => `<option value="${esc(p)}">`).join('');
+  const regs = S.cad.regras.filter(r => r.ativo);
+  const conta = r => S.sys ? S.sys.rows.filter(x => Core.norm(x.procedimento).includes(Core.norm(r.termo))).length : null;
+  $('#tblRegras').innerHTML = `<colgroup><col style="width:44%"><col style="width:30%"><col style="width:14%"><col style="width:12%"></colgroup>
+    <thead><tr><th>Procedimento contém</th><th>Executor</th><th class="num">Linhas na competência</th><th></th></tr></thead>
+    <tbody>${regs.length ? regs.map(r => { const d = dentById(r.dentistaId); const n = conta(r); return `<tr>
+      <td><b>${esc(r.termo)}</b></td><td>${esc(d?.nome || '—')}${d && !d.ativo ? ' <span class="tag nao_identificado">inativo — regra parada</span>' : ''}</td>
+      <td class="num">${n == null ? '<span class="muted">—</span>' : n0(n)}</td>
+      <td style="text-align:right"><button class="btn ghost sm danger" data-rgx="${r.id}">Inativar</button></td></tr>`; }).join('')
+      : '<tr><td colspan="4" class="empty">Nenhuma regra. Ex.: "Consulta Odontológica" → CLINICA.</td></tr>'}</tbody>`;
+  $('#tblRegras').querySelectorAll('[data-rgx]').forEach(b => b.onclick = async () => {
+    const r = S.cad.regras.find(x => x.id === b.dataset.rgx);
+    if (!await dialog('Inativar regra?', `"${r.termo}" deixa de ser aplicada a partir de agora. Competências já fechadas não mudam.`, { okText: 'Inativar' })) return;
+    try { await q(sb.from('regras_procedimento').update({ ativo: false }).eq('id', r.id), 'Inativar regra'); await cadChanged(); toast('Regra inativada'); } catch (e) { fail(e); }
+  });
+}
+$('#rgAdd').onclick = async () => {
+  const termo = $('#rgTermo').value.trim(), dentista_id = $('#rgDent').value;
+  if (termo.length < 2) { toast('Informe o texto do procedimento.'); $('#rgTermo').focus(); return; }
+  if (!dentista_id) { toast('Escolha o dentista executor.'); return; }
+  if (S.cad.regras.some(r => r.ativo && Core.norm(r.termo) === Core.norm(termo))) { toast('Já existe uma regra ativa para esse procedimento.'); return; }
+  try { await q(sb.from('regras_procedimento').insert({ termo, dentista_id }), 'Criar regra'); $('#rgTermo').value = ''; await cadChanged(); toast('Regra criada e aplicada'); } catch (e) { fail(e); }
+};
+
 /* ===================== especialidades ===================== */
 function renderEsp() {
   const used = id => S.cad.dentistas.filter(d => d.ativo && d.especialidadeId === id).length;
@@ -918,7 +949,7 @@ async function loadVersoes(id, comp) {
   } catch (e) { toast(e.message); }
 }
 document.querySelectorAll('#segAud button').forEach(b => b.onclick = () => { document.querySelectorAll('#segAud button').forEach(x => x.classList.toggle('on', x === b)); S.audFiltro = b.dataset.a; loadAuditoria(); });
-const TAB_LBL = { solicitacoes: 'Solicitação', conciliacoes: 'Conciliação', conciliacao_arquivos: 'Arquivo', dentistas: 'Dentista', especialidades: 'Especialidade' };
+const TAB_LBL = { regras_procedimento: 'Regra', solicitacoes: 'Solicitação', conciliacoes: 'Conciliação', conciliacao_arquivos: 'Arquivo', dentistas: 'Dentista', especialidades: 'Especialidade' };
 const IGN = new Set(['atualizado_em', 'atualizado_por', 'criado_em', 'criado_por', 'totais', 'id']);
 function descAud(a) {
   const d = a.depois || {}, b = a.antes || {};

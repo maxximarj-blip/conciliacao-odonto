@@ -162,7 +162,7 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
     <button data-tab="esp">Especialidades</button>
     <button data-tab="hist">Histórico</button>
   </nav>
-  <div class="user"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
+  <div class="user" title="versão 2026.11.06-5"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
 </div></header>
 
 <div class="wrap">
@@ -249,7 +249,7 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
 
 <!-- ================= GUIAS PENDENTES ================= -->
 <section id="tab-pend" class="hide">
-  <div class="row" style="margin-top:26px"><div><h1 style="margin:0">Guias pendentes</h1><p class="sub" id="pendSub" style="margin:4px 0 16px">Guias com situação pendente no sistema, com o motivo e o dentista executor. Aparecem aqui sempre, entrem ou não no cálculo da comissão.</p></div></div>
+  <div class="row" style="margin-top:26px"><div><h1 style="margin:0">Guias pendentes</h1><p class="sub" id="pendSub" style="margin:4px 0 16px">Guias com status Pendente no sistema, com o motivo e o dentista executor. Elas ficam fora do movimento e da comissão e aparecem só aqui, para acompanhamento.</p></div></div>
   <div id="pendEmpty" class="card empty"><b>Nenhuma conciliação ainda</b>Suba as planilhas na aba Conciliação e clique em "Conciliar".</div>
   <div id="pendBody" class="hide">
     <div class="chips" id="pendChips" style="margin-bottom:14px"></div>
@@ -280,6 +280,16 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
   </div>
   <div class="card sect" id="sugCard"></div>
   <div class="card sect"><table class="t" id="tblDent"></table></div>
+  <div class="card sect">
+    <div class="row" style="margin-bottom:4px"><h3 style="margin:0">Regras automáticas por procedimento</h3></div>
+    <p class="hint">Todo procedimento que <b>contém</b> o texto vai direto para o dentista escolhido, antes do cruzamento com as planilhas. Ex.: "Consulta Odontológica" → CLINICA. A troca manual na linha continua valendo por cima.</p>
+    <div class="row" style="gap:10px;align-items:flex-end;margin-bottom:12px">
+      <label class="fld" style="flex:2;min-width:220px"><span>Procedimento contém</span><input class="inp" id="rgTermo" list="rgSug" placeholder="Ex.: Consulta Odontológica"><datalist id="rgSug"></datalist></label>
+      <label class="fld" style="flex:1.4;min-width:200px"><span>Executor</span><select class="inp" id="rgDent"></select></label>
+      <button class="btn pri" id="rgAdd">Adicionar regra</button>
+    </div>
+    <table class="t" id="tblRegras"></table>
+  </div>
   <div class="row sect"><label class="chk"><input type="checkbox" id="showInativos"> Mostrar inativos</label><span class="muted" style="font-size:12px">Dentistas não são apagados: ficam inativos para manter o histórico.</span></div>
 </section>
 
@@ -311,6 +321,7 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
     <label class="fld"><span>E-mail</span><input class="inp" id="lgEmail" type="email" autocomplete="username" required></label>
     <label class="fld" style="margin-top:10px"><span>Senha</span><input class="inp" id="lgSenha" type="password" autocomplete="current-password" required></label>
     <button class="btn pri" style="width:100%;justify-content:center;margin-top:16px" id="lgBtn">Entrar</button>
+    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.06-5</p>
     <p class="muted" id="lgMsg" style="font-size:12.5px;min-height:18px;margin:10px 0 0"></p>
     <div class="lg-links"><a href="#" id="lnkAcesso">Solicitar acesso</a><span>·</span><a href="#" id="lnkSenha">Esqueci minha senha</a></div>
   </form>
@@ -345,8 +356,8 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
 
 <script src="js/vendor/xlsx.full.min.js"></script>
 <script src="js/vendor/supabase.js"></script>
-<script src="js/config.js"></script>
-<script src="js/core.js"></script>
-<script src="js/app.js"></script>
+<script src="js/config.js?v=2026.11.06-5"></script>
+<script src="js/core.js?v=2026.11.06-5"></script>
+<script src="js/app.js?v=2026.11.06-5"></script>
 </body>
 </html>

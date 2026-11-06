@@ -104,7 +104,6 @@ update public.perfis set papel = 'admin' where email = 'pessoa@clinica.com';
 | `comissoes_fechadas` / `comissoes_vigentes` | comissões por dentista e mês (todas / só o último fechamento) |
 | `auditoria` | log de todas as alterações |
 
-
 ---
 
 ## Regras da conciliação
@@ -118,6 +117,12 @@ update public.perfis set papel = 'admin' where email = 'pessoa@clinica.com';
 Comissão: **percentual** sobre a base (situações marcadas), **diária fixa** × dias com atendimento, ou **valor fixo** mensal. O padrão vem da especialidade, e o cadastro do dentista pode sobrescrever.
 
 ---
+
+## Guias pendentes
+Toda linha com status/situação **Pendente** fica **fora do movimento**: não entra em produção, detalhamento, divergências, base nem comissão. Ela aparece só na aba **Guias pendentes**, com motivo e executor, para acompanhamento.
+
+## Limpar a base (recomeçar)
+Rode `supabase/limpar_base.sql` no SQL Editor. Ele apaga competências, versões, comissões e auditoria, mas mantém usuários, dentistas, especialidades e regras. Depois apague as planilhas em **Storage → planilhas**.
 
 ## Atualizações futuras
 Para publicar uma nova versão do site, basta substituir os arquivos no GitHub. O banco não muda. Se uma atualização trouxer mudanças no `schema.sql`, rode o arquivo de novo no SQL Editor: ele pode ser executado várias vezes sem perder dados.
