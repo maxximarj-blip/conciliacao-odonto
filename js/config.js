@@ -5,4 +5,5 @@ window.APP_CONFIG = {
   supabaseUrl: 'https://lxljwvutzlkqjexnjajj.supabase.co',
   supabaseAnonKey: 'sb_publishable_mOm5Q_zRT-8ZgTJVSSzxDw_8rAJmKIA',
   clinica: 'Odonto Premier',
+ emailSolicitacoes: 'maxximarj@gmail.com',
 };
