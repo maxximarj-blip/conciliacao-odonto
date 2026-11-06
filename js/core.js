@@ -202,7 +202,7 @@ const Core = (() => {
         Se não bater, fica pendente na divergência para o usuário decidir.
      4) Sem nenhuma planilha → usa o dentista do sistema, se estiver cadastrado.
      5) Decisões do usuário: resoluções de divergência, lançamentos não localizados e troca linha a linha. */
-  function reconcile({ systemRows, dentistFiles, dentistas, especialidades, situacoesBase, overrides = {}, diariasOverride = {}, resolucoes = {}, lancamentos = {}, splits = {}, regrasProc = [], tolAtend = 1, tolDiv = 1 }) {
+  function reconcile({ systemRows, dentistFiles, dentistas, especialidades, situacoesBase, overrides = {}, diariasOverride = {}, resolucoes = {}, lancamentos = {}, splits = {}, regrasProc = [], aprovadas = {}, tolAtend = 1, tolDiv = 1 }) {
     const byId = Object.fromEntries(dentistas.map(d => [d.id, d]));
     const files = dentistFiles.filter(f => f.dentistaId);
     const add = (m, k, v) => { if (!m.has(k)) m.set(k, new Set()); m.get(k).add(v); };
@@ -233,7 +233,7 @@ const Core = (() => {
       let exec = null, origem = 'nao_identificado', alerta = '', atPendente = null;
       if (cands.length === 1) { exec = cands[0]; origem = 'dentista'; }
       else if (cands.length > 1) { origem = 'conflito'; alerta = 'Guia informada por: ' + cands.map(id => byId[id]?.nome).join(', '); }
-      return { ...r, executorId: exec, origem, alerta, candidatos: cands, atPendente, pend: ehPendente(r) };
+      return { ...r, executorId: exec, origem, alerta, candidatos: cands, atPendente, pend: ehPendente(r) && !aprovadas[r.id], aprovado: ehPendente(r) && !!aprovadas[r.id], pendOriginal: ehPendente(r) };
     });
     // regras automáticas por procedimento (ex.: Consulta odontológica → CLINICA) têm prioridade sobre os cruzamentos
     const regras = regrasProc.filter(rg => rg.termo && byId[rg.dentistaId]).map(rg => ({ ...rg, k: norm(rg.termo) }));
@@ -292,7 +292,7 @@ const Core = (() => {
 
     // ---- etapa 3: decisões do usuário
     const extras = []; // ajustes de valor, lançamentos atribuídos e divisões entre dentistas
-    const inBase = l => baseSet.size === 0 || baseSet.has(l.situacao);
+    const inBase = l => l.aprovado || baseSet.size === 0 || baseSet.has(l.situacao);
     const nomeParts = partes => partes.map(p => `${byId[p.dentistaId]?.nome || '?'} ${Math.round(p.pct * 100) / 100}%`).join(' · ');
     const partesOk = partes => Array.isArray(partes) && partes.filter(p => p.dentistaId && p.pct > 0).length >= 1;
     const dividirLinha = (l, partes, motivo) => {
@@ -314,13 +314,13 @@ const Core = (() => {
       if (alvo && r.decisao === 'informado' && Math.abs(d.dif) > 0.004) extras.push({ tipo: 'ajuste', dentistaId: alvo, valor: d.dif, data: d.data || null, ref: d.atendimento || d.guia, paciente: d.paciente, descricao: 'Ajuste p/ valor informado' });
     });
     linhas.forEach(l => {
-      if (overrides[l.id] !== undefined && l.origem !== 'split' && !l.pend) { l.executorId = overrides[l.id] || null; l.origem = l.executorId ? 'manual' : 'nao_identificado'; l.atPendente = null; }
+      if (overrides[l.id] !== undefined && l.origem !== 'split') { l.executorId = overrides[l.id] || null; l.origem = l.executorId ? 'manual' : 'nao_identificado'; l.atPendente = null; }
     });
     // divisão de guia definida na linha (vale para todas as linhas da guia)
     linhas.forEach(l => { const sp = splits[l.guia]; if (sp && partesOk(sp.partes) && !l.pend && l.origem !== 'split' && !(l.regra && overrides[l.id] === undefined)) dividirLinha(l, sp.partes, 'Guia dividida'); });
     linhas.forEach(l => { l.comissionavel = !l.pend && inBase(l) && !!l.executorId; });
     const mov = linhas.filter(l => !l.pend);
-    const pendentes = linhas.filter(l => l.pend);
+    const pendentes = linhas.filter(l => l.pendOriginal);
 
     // ---- lançamentos informados e não localizados no sistema
     const naoEncontradas = [];
@@ -385,7 +385,9 @@ const Core = (() => {
       divergencias: divergencias.length, divPend,
     };
     tot.pendencias = tot.divPend + tot.neAbertos + tot.conflitos;
-    tot.pendentesQtd = pendentes.length; tot.pendentesValor = pendentes.reduce((a, l) => a + l.valor, 0);
+    const abertas = pendentes.filter(l => l.pend), aprov = pendentes.filter(l => l.aprovado);
+    tot.pendentesQtd = abertas.length; tot.pendentesValor = abertas.reduce((a, l) => a + l.valor, 0);
+    tot.aprovadasQtd = aprov.length; tot.aprovadasValor = aprov.reduce((a, l) => a + l.valor, 0);
     return { linhas: mov, resumo: resumoArr, naoEncontradas, divergencias, extras, pendentes, tot };
   }
 

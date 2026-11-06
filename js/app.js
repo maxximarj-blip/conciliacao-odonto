@@ -20,7 +20,7 @@ const S = {
   ro: false,           // competência fechada → somente leitura
   sys: null, denFiles: [],
   situacoes: [], sitBase: new Set(),
-  overrides: {}, overridesAuto: {}, diarias: {}, resolucoes: {}, lancamentos: {}, splits: {}, pendView: { dent: '', q: '', page: 0 },
+  overrides: {}, overridesAuto: {}, aprovadas: {}, diarias: {}, resolucoes: {}, lancamentos: {}, splits: {}, pendView: { dent: '', q: '', page: 0, f: 'abertas' },
   result: null, view: { orig: 'todas', dent: '', q: '', page: 0 }, divView: { f: 'pend', page: 0 },
   editId: null, audFiltro: '',
 };
@@ -195,7 +195,7 @@ async function cadChanged() {
 $('#compMes').onchange = () => { if ($('#compMes').value) abrirCompetencia($('#compMes').value); };
 function resetEstado() {
   S.sys = null; S.denFiles = []; S.situacoes = []; S.sitBase = new Set();
-  S.overrides = {}; S.overridesAuto = {}; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
+  S.overrides = {}; S.overridesAuto = {}; S.aprovadas = {}; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
   S.view = { orig: 'todas', dent: '', q: '', page: 0 }; S.divView = { f: 'pend', page: 0 };
   $('#tolDiv').value = 1;
 }
@@ -209,7 +209,7 @@ async function abrirCompetencia(mes) {
     S.conc = c || { competencia: comp, novo: true };
     if (c) {
       const regras = c.regras || {}, dec = c.decisoes || {};
-      S.overrides = dec.overrides || {}; S.diarias = dec.diarias || {}; S.resolucoes = dec.resolucoes || {}; S.lancamentos = dec.lancamentos || {}; S.splits = dec.splits || {}; S.overridesAuto = dec.overridesAuto || {};
+      S.overrides = dec.overrides || {}; S.diarias = dec.diarias || {}; S.resolucoes = dec.resolucoes || {}; S.lancamentos = dec.lancamentos || {}; S.splits = dec.splits || {}; S.overridesAuto = dec.overridesAuto || {}; S.aprovadas = dec.aprovadas || {};
       if (regras.tolDiv != null) $('#tolDiv').value = regras.tolDiv;
       const arqs = await q(sb.from('conciliacao_arquivos').select('*').eq('conciliacao_id', c.id).eq('ativo', true).order('enviado_em'), 'Arquivos');
       const sysA = arqs.filter(a => a.tipo === 'sistema').pop();
@@ -246,7 +246,7 @@ async function enviarArquivo(file, tipo, dentistaId) {
   return q(sb.from('conciliacao_arquivos').insert({ conciliacao_id: c.id, tipo, nome: file.name, dentista_id: dentistaId || null, storage_path: path, tamanho: file.size }).select().single(), 'Registrar arquivo');
 }
 const regrasAtuais = () => ({ sitBase: [...S.sitBase], tolDiv: Math.max(0, +$('#tolDiv').value || 0) });
-const decisoesAtuais = () => ({ overrides: S.overrides, diarias: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, overridesAuto: S.overridesAuto });
+const decisoesAtuais = () => ({ overrides: S.overrides, diarias: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, overridesAuto: S.overridesAuto, aprovadas: S.aprovadas });
 const totaisAtuais = () => {
   if (!S.result) return {};
   const T = S.result.tot;
@@ -330,7 +330,7 @@ setupDrop($('#dropSys'), $('#fileSys'), async files => {
     const antigo = S.sys?.arquivoId;
     const arq = await enviarArquivo(f, 'sistema');
     if (antigo) await q(sb.from('conciliacao_arquivos').update({ ativo: false }).eq('id', antigo), 'Arquivo anterior');
-    S.overrides = {}; S.overridesAuto = {}; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
+    S.overrides = {}; S.overridesAuto = {}; S.aprovadas = {}; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
     montarSistema(f.name, sheets, arq.id, null);
     S.denFiles.forEach(df => analyzeDen(df, false));
     renderAllConc(); run(false); salvar();
@@ -369,7 +369,7 @@ function renderSys() {
     <div class="row" style="margin-top:14px"><span class="chip ok" title="Guardado no histórico">✓ ${esc(S.sys.fileName)}</span><span class="sp"></span>
       <label class="fld" style="width:230px"><span>Aba usada</span><select class="inp" id="sysSheet">${S.sys.analysis.filter(a => a.score > 0).map(a => `<option ${a.name === S.sys.sel ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></label></div>
     <div class="meta"><div><span>Linhas no movimento</span><b>${n0(rows.length)}</b></div><div><span>Guias</span><b>${n0(new Set(rows.map(r => r.guia)).size)}</b></div><div><span>Produção</span><b>${brl(rows.reduce((a, r) => a + r.valor, 0))}</b></div><div><span>Período</span><b style="font-size:12px">${per}</b></div></div>
-    ${S.sys.pendRows.length ? `<div class="notice warn" style="margin-top:10px">${n0(S.sys.pendRows.length)} linha(s) com status <b>Pendente</b> (${brl(S.sys.pendRows.reduce((a, r) => a + r.valor, 0))}) ficam <b>fora do movimento</b> e da comissão. Veja a aba <b>Guias pendentes</b>.</div>` : ''}
+    ${S.sys.pendRows.length ? `<div class="notice warn" style="margin-top:10px">${n0(S.sys.pendRows.length)} linha(s) com status <b>Pendente</b> (${brl(S.sys.pendRows.reduce((a, r) => a + r.valor, 0))}) ficam <b>fora do movimento</b> até o pagamento ser aprovado na aba <b>Guias pendentes</b>.</div>` : ''}
     <div class="chips" style="margin-top:10px">${Object.keys(F).map(k => `<span class="chip ${S.sys.map[k] !== undefined ? 'ok' : 'miss'}">${S.sys.map[k] !== undefined ? '✓' : '✕'} ${F[k].replace(' *', '')}</span>`).join('')}</div>
     <details class="map"><summary>Ajustar colunas manualmente</summary><div class="mapgrid">${Object.keys(F).map(k => `<label class="fld"><span>${F[k]}</span><select class="inp" data-map="${k}">${colOpts(k)}</select></label>`).join('')}</div></details>`;
   const afterChange = () => { S.denFiles.forEach(df => analyzeDen(df, false)); renderAllConc(); if (S.result) run(false); salvarRegras(); };
@@ -462,7 +462,7 @@ function run(go) {
   if (!S.sys) return;
   S.result = Core.reconcile({
     systemRows: S.sys.rows, dentistFiles: S.denFiles.filter(f => f.dentistaId), dentistas: S.cad.dentistas, especialidades: S.cad.especialidades,
-    situacoesBase: [...S.sitBase], overrides: S.overrides, diariasOverride: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, regrasProc: S.cad.regras.filter(r => r.ativo && dentById(r.dentistaId)?.ativo), tolDiv: Math.max(0, +$('#tolDiv').value || 0),
+    situacoesBase: [...S.sitBase], overrides: S.overrides, diariasOverride: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, regrasProc: S.cad.regras.filter(r => r.ativo && dentById(r.dentistaId)?.ativo), aprovadas: S.aprovadas, tolDiv: Math.max(0, +$('#tolDiv').value || 0),
   });
   renderResult(); renderCompBar();
   if (go) { S.view.page = 0; showTab('res'); }
@@ -477,7 +477,7 @@ function renderResult() {
   const w = v => (T.linhas ? v / T.linhas * 100 : 0) + '%';
   $('#kpis').innerHTML = `
     <div class="kpi"><span>Produção total</span><b>${brl(T.producao)}</b><small>${n0(T.guias)} guias · ${n0(T.linhas)} linhas</small></div>
-    <div class="kpi"><span>Base comissionável</span><b>${brl(T.base)}</b><small>${[...S.sitBase].join(', ') || 'todas as situações'}${T.ajustes ? ' · ajustes ' + brl(T.ajustes) : ''}</small></div>
+    <div class="kpi"><span>Base comissionável</span><b>${brl(T.base)}</b><small>${[...S.sitBase].join(', ') || 'todas as situações'}${T.aprovadasQtd ? ` + ${n0(T.aprovadasQtd)} pendência(s) aprovada(s)` : ''}${T.ajustes ? ' · ajustes ' + brl(T.ajustes) : ''}</small></div>
     <div class="kpi hl"><span>Comissão total</span><b>${brl(T.comissao)}</b><small>${R.resumo.length} dentistas</small></div>
     <div class="kpi"><span>Linhas identificadas</span><b>${pId.toFixed(1).replace('.', ',')}%</b>
       <div class="bar2"><i style="width:${w(T.viaDentista)};background:var(--ok)"></i><i style="width:${w(T.viaSistema)};background:var(--info)"></i><i style="width:${w(T.manual)};background:#6b46c1"></i><i style="width:${w(T.conflitos)};background:var(--warn)"></i></div></div>
@@ -506,18 +506,18 @@ function renderResumo() {
   });
   $('#tblResumo').querySelectorAll('[data-dia]').forEach(i => i.onchange = () => { S.diarias[i.dataset.dia] = Math.max(0, +i.value || 0); run(false); salvar(); });
 }
-const ORIG = [['todas', 'Todas'], ['dentista', 'Via guia'], ['atendimento', 'Via atendimento'], ['sistema', 'Via sistema'], ['manual', 'Manual'], ['nao_identificado', 'Sem executor'], ['conflito', 'Conflito'], ['split', 'Dividida'], ['regra', 'Por regra'], ['alerta', 'Com alerta']];
+const ORIG = [['todas', 'Todas'], ['dentista', 'Via guia'], ['atendimento', 'Via atendimento'], ['sistema', 'Via sistema'], ['manual', 'Manual'], ['nao_identificado', 'Sem executor'], ['conflito', 'Conflito'], ['split', 'Dividida'], ['regra', 'Por regra'], ['aprovada', 'Pendência aprovada'], ['alerta', 'Com alerta']];
 const ORIG_LBL = { dentista: 'Dentista (guia)', atendimento: 'Dentista (atendimento)', sistema: 'Sistema', manual: 'Manual', nao_identificado: 'Sem executor', conflito: 'Conflito', split: 'Dividida entre dentistas', regra: 'Regra por procedimento' };
 function filtered() {
   const { orig, dent, q: qs } = S.view; const qq = Core.norm(qs);
   return S.result.linhas.filter(l =>
-    (orig === 'todas' || (orig === 'alerta' ? !!l.alerta : l.origem === orig)) &&
+    (orig === 'todas' || (orig === 'alerta' ? !!l.alerta : orig === 'aprovada' ? l.aprovado : l.origem === orig)) &&
     (!dent || (dent === '_none' ? !l.executorId : l.executorId === dent)) &&
     (!qq || Core.norm([l.guiaRaw, l.atendimento, l.paciente, l.procedimento, l.dentistaSistema, l.convenio].join(' ')).includes(qq)));
 }
 function renderSeg() {
   const L = S.result.linhas;
-  const c = k => k === 'todas' ? L.length : k === 'alerta' ? L.filter(l => l.alerta).length : L.filter(l => l.origem === k).length;
+  const c = k => k === 'todas' ? L.length : k === 'alerta' ? L.filter(l => l.alerta).length : k === 'aprovada' ? L.filter(l => l.aprovado).length : L.filter(l => l.origem === k).length;
   $('#segOrig').innerHTML = ORIG.map(([k, t]) => `<button class="${S.view.orig === k ? 'on' : ''}" data-o="${k}">${t}<em>${c(k)}</em></button>`).join('');
   $('#segOrig').querySelectorAll('button').forEach(b => b.onclick = () => { S.view.orig = b.dataset.o; S.view.page = 0; renderSeg(); renderDet(); });
   $('#fDent').innerHTML = `<option value="">Todos os executores</option><option value="_none">— sem executor —</option>` + ativos().map(d => `<option value="${d.id}">${esc(d.nome)}</option>`).join('');
@@ -746,44 +746,68 @@ function renderPend() {
   $('#pendEmpty').classList.toggle('hide', !!R); $('#pendBody').classList.toggle('hide', !R);
   const cnt = $('#cntPend');
   if (!R) { cnt.style.display = 'none'; return; }
-  const P = R.pendentes;
+  const TODAS = R.pendentes, P = TODAS.filter(l => l.pend), A = TODAS.filter(l => l.aprovado);
   cnt.textContent = P.length; cnt.style.display = P.length ? '' : 'none';
-  const guias = new Set(P.map(l => l.guia)).size;
-  $('#pendChips').innerHTML = `<span class="chip">${n0(P.length)} linhas · ${n0(guias)} guias</span><span class="chip"><b>${brl(R.tot.pendentesValor)}</b></span>
-    <span class="chip miss">🔒 Fora do movimento e da comissão</span><span class="chip">Quando a guia for regularizada no sistema, ela entra no movimento da competência em que for faturada</span>`;
-  // por executor
+  $('#pendChips').innerHTML = `<span class="chip miss">🔒 Em aberto: ${n0(P.length)} · <b>${brl(R.tot.pendentesValor)}</b> · fora do movimento</span>
+    <span class="chip ok">✓ Pagamento aprovado: ${n0(A.length)} · <b>${brl(R.tot.aprovadasValor)}</b> · entram na produção e na comissão</span>`;
+  // por executor / por motivo (somente em aberto)
   const byE = {};
   P.forEach(l => {
     if (l.origem === 'split') (l.split || []).forEach(p => { const k = p.dentistaId; const o = byE[k] || (byE[k] = { nome: dentById(k)?.nome || '?', n: 0, v: 0 }); o.n++; o.v += l.valor * p.pct / 100; });
     else { const k = l.executorId || '_'; const o = byE[k] || (byE[k] = { nome: dentById(l.executorId)?.nome || '— sem executor —', n: 0, v: 0 }); o.n++; o.v += l.valor; }
   });
   const eRows = Object.entries(byE).sort((a, b) => b[1].v - a[1].v);
-  $('#tblPendDent').innerHTML = `<colgroup><col style="width:52%"><col style="width:18%"><col style="width:30%"></colgroup><thead><tr><th>Executor</th><th class="num">Linhas</th><th class="num">Valor</th></tr></thead>
-    <tbody>${eRows.map(([k, o]) => `<tr style="cursor:pointer" data-pe="${k}"><td>${k === '_' ? '<span class="muted">— sem executor —</span>' : '<b>' + esc(o.nome) + '</b>'}</td><td class="num">${n0(o.n)}</td><td class="num">${brl(o.v)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Nenhuma guia pendente 🎉</td></tr>'}</tbody>`;
+  $('#tblPendDent').innerHTML = `<colgroup><col style="width:52%"><col style="width:18%"><col style="width:30%"></colgroup><thead><tr><th>Executor (em aberto)</th><th class="num">Linhas</th><th class="num">Valor</th></tr></thead>
+    <tbody>${eRows.map(([k, o]) => `<tr style="cursor:pointer" data-pe="${k}"><td>${k === '_' ? '<span class="muted">— sem executor —</span>' : '<b>' + esc(o.nome) + '</b>'}</td><td class="num">${n0(o.n)}</td><td class="num">${brl(o.v)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Nenhuma guia pendente em aberto 🎉</td></tr>'}</tbody>`;
   $('#tblPendDent').querySelectorAll('[data-pe]').forEach(tr => tr.onclick = () => { S.pendView.dent = tr.dataset.pe; S.pendView.page = 0; renderPend(); });
-  // por motivo
   const byM = {};
   P.forEach(l => { const txt = (l.obs || '').replace(/[.\s]+$/, ''); const k = Core.norm(txt) || '_'; const o = byM[k] || (byM[k] = { nome: txt || '(sem motivo informado)', n: 0, v: 0 }); o.n++; o.v += l.valor; });
   const mRows = Object.entries(byM).map(([k, o]) => [o.nome, o]).sort((a, b) => b[1].n - a[1].n);
-  $('#tblPendMot').innerHTML = `<colgroup><col style="width:66%"><col style="width:12%"><col style="width:22%"></colgroup><thead><tr><th>Motivo</th><th class="num">Linhas</th><th class="num">Valor</th></tr></thead>
-    <tbody>${mRows.slice(0, 12).map(([k, o]) => `<tr><td title="${esc(k)}">${esc(k)}</td><td class="num">${n0(o.n)}</td><td class="num">${brl(o.v)}</td></tr>`).join('')}${mRows.length > 12 ? `<tr><td colspan="3" class="muted" style="font-size:12px">+ ${mRows.length - 12} outros motivos (veja a lista abaixo)</td></tr>` : ''}</tbody>`;
-  // lista
+  $('#tblPendMot').innerHTML = `<colgroup><col style="width:66%"><col style="width:12%"><col style="width:22%"></colgroup><thead><tr><th>Motivo (em aberto)</th><th class="num">Linhas</th><th class="num">Valor</th></tr></thead>
+    <tbody>${mRows.slice(0, 12).map(([k, o]) => `<tr><td title="${esc(k)}">${esc(k)}</td><td class="num">${n0(o.n)}</td><td class="num">${brl(o.v)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">—</td></tr>'}${mRows.length > 12 ? `<tr><td colspan="3" class="muted" style="font-size:12px">+ ${mRows.length - 12} outros motivos (veja a lista abaixo)</td></tr>` : ''}</tbody>`;
+  // filtros
+  const V = S.pendView;
+  $('#segPend').innerHTML = [['abertas', 'Em aberto', P.length], ['aprovadas', 'Aprovadas', A.length], ['todas', 'Todas', TODAS.length]].map(([k, t, c]) => `<button class="${V.f === k ? 'on' : ''}" data-pf="${k}">${t}<em>${c}</em></button>`).join('');
+  $('#segPend').querySelectorAll('button').forEach(b => b.onclick = () => { V.f = b.dataset.pf; V.page = 0; renderPend(); });
   $('#pFDent').innerHTML = `<option value="">Todos os executores</option><option value="_">— sem executor —</option>` + ativos().map(d => `<option value="${d.id}">${esc(d.nome)}</option>`).join('');
-  $('#pFDent').value = S.pendView.dent;
-  const qq = Core.norm(S.pendView.q);
-  const list = P.filter(l => (!S.pendView.dent || (S.pendView.dent === '_' ? !l.executorId && l.origem !== 'split' : l.executorId === S.pendView.dent || (l.split || []).some(p => p.dentistaId === S.pendView.dent)))
+  $('#pFDent').value = V.dent;
+  const qq = Core.norm(V.q);
+  const base = V.f === 'abertas' ? P : V.f === 'aprovadas' ? A : TODAS;
+  const list = base.filter(l => (!V.dent || (V.dent === '_' ? !l.executorId && l.origem !== 'split' : l.executorId === V.dent || (l.split || []).some(p => p.dentistaId === V.dent)))
     && (!qq || Core.norm([l.guiaRaw, l.atendimento, l.paciente, l.procedimento, l.obs, l.dentistaSistema].join(' ')).includes(qq)));
-  const PG = 50, pages = Math.max(1, Math.ceil(list.length / PG)); if (S.pendView.page >= pages) S.pendView.page = pages - 1;
-  const sl = list.slice(S.pendView.page * PG, (S.pendView.page + 1) * PG);
-  $('#tblPend').innerHTML = `<colgroup><col style="width:7%"><col style="width:11%"><col style="width:16%"><col style="width:20%"><col style="width:16%"><col style="width:21%"><col style="width:9%"></colgroup>
-    <thead><tr><th>Data</th><th>Guia</th><th>Paciente</th><th>Procedimento</th><th>Executor</th><th>Motivo da pendência</th><th class="num">Valor</th></tr></thead>
-    <tbody>${sl.length ? sl.map(l => `<tr><td class="mono" style="font-size:12px">${l.data ? l.data.toLocaleDateString('pt-BR').slice(0, 5) : '—'}</td>
+  const aprovaveis = list.filter(l => l.pend && (l.executorId || l.origem === 'split'));
+  $('#pBulk').textContent = `✓ Aprovar pgto das filtradas com executor (${n0(aprovaveis.length)})`;
+  $('#pBulk').disabled = S.ro || !aprovaveis.length;
+  const PG = 50, pages = Math.max(1, Math.ceil(list.length / PG)); if (V.page >= pages) V.page = pages - 1;
+  const sl = list.slice(V.page * PG, (V.page + 1) * PG);
+  $('#tblPend').innerHTML = `<colgroup><col style="width:6%"><col style="width:10%"><col style="width:13%"><col style="width:14%"><col style="width:17%"><col style="width:17%"><col style="width:8%"><col style="width:15%"></colgroup>
+    <thead><tr><th>Data</th><th>Guia</th><th>Paciente</th><th>Procedimento</th><th>Executor</th><th>Motivo da pendência</th><th class="num">Valor</th><th style="text-align:right">Ação</th></tr></thead>
+    <tbody>${sl.length ? sl.map(l => { const ap = S.aprovadas[l.id]; return `<tr style="${l.aprovado ? 'background:var(--okSoft)' : ''}"><td class="mono" style="font-size:12px">${l.data ? l.data.toLocaleDateString('pt-BR').slice(0, 5) : '—'}</td>
       <td class="mono" style="font-size:12px" title="atend. ${esc(l.atendimento)}">${esc(l.guiaRaw)}</td><td title="${esc(l.paciente)}">${esc(l.paciente || '—')}</td>
-      <td title="${esc(l.procedimento)}">${esc(l.procedimento || '—')}</td><td title="${esc(execTxt(l))}" class="${l.executorId || l.origem === 'split' ? '' : 'muted'}">${esc(execTxt(l))}</td>
-      <td class="two"><span class="l" title="${esc(l.obs)}">${esc(l.obs || '—')}</span><small>${esc(l.status || l.situacao)}</small></td><td class="num">${brl(l.valor)}</td></tr>`).join('') : '<tr><td colspan="7" class="empty">Nenhuma guia neste filtro.</td></tr>'}</tbody>`;
+      <td title="${esc(l.procedimento)}">${esc(l.procedimento || '—')}</td>
+      <td title="${esc(l.alerta || l.regraTxt || ORIG_LBL[l.origem] || '')}"><select class="inp" data-pov="${l.id}" ${S.ro ? 'disabled' : ''} style="${l.executorId || l.origem === 'split' ? '' : 'border-color:var(--warn)'}">${l.origem === 'split' ? `<option value="_cur" selected>÷ ${esc(partesTxt(l.split))}</option>` : ''}${dentOpts(l.executorId, '— sem executor —')}</select></td>
+      <td class="two"><span class="l" title="${esc(l.obs)}">${esc(l.obs || '—')}</span><small>${esc(l.status || l.situacao)}</small></td><td class="num">${brl(l.valor)}</td>
+      <td style="text-align:right">${l.aprovado ? `<div class="row" style="gap:6px;justify-content:flex-end;flex-wrap:nowrap"><div style="text-align:right;line-height:1.2" title="${esc(ap?.por || '')}"><b style="color:var(--ok);font-size:12px">✓ Aprovado</b><div class="muted" style="font-size:11px">${ap?.em ? dtf(ap.em) : ''}</div></div><button class="btn ghost sm" data-desap="${l.id}" ${S.ro ? 'disabled' : ''} title="Desfazer aprovação">↺</button></div>` : `<button class="btn sm pri" data-apr="${l.id}" ${S.ro ? 'disabled' : ''}>Aprovar pgto</button>`}</td></tr>`; }).join('') : `<tr><td colspan="8" class="empty">${V.f === 'abertas' ? 'Nenhuma guia pendente em aberto.' : 'Nenhuma guia neste filtro.'}</td></tr>`}</tbody>`;
+  const T = $('#tblPend');
+  T.querySelectorAll('[data-pov]').forEach(x => x.onchange = () => { if (x.value === '_cur') return; S.overrides[x.dataset.pov] = x.value; delete S.overridesAuto[x.dataset.pov]; run(false); salvar(); });
+  T.querySelectorAll('[data-apr]').forEach(b => b.onclick = () => {
+    const l = TODAS.find(x => x.id === +b.dataset.apr);
+    if (!l.executorId && l.origem !== 'split') { toast('Escolha o dentista executor antes de aprovar.'); T.querySelector(`[data-pov="${l.id}"]`)?.focus(); return; }
+    S.aprovadas[l.id] = { em: new Date().toISOString(), por: S.user?.email || '' };
+    run(false); salvar(); toast(`Guia ${l.guiaRaw} aprovada: ${brl(l.valor)} entrou na produção de ${execTxt(l)}`);
+  });
+  T.querySelectorAll('[data-desap]').forEach(b => b.onclick = () => { delete S.aprovadas[b.dataset.desap]; run(false); salvar(); toast('Aprovação desfeita: a guia voltou para pendente'); });
   $('#pagerPend').innerHTML = `<span>${n0(list.length)} linhas · ${brl(list.reduce((a, l) => a + l.valor, 0))}</span><span class="sp"></span>
-    <button class="btn sm" ${S.pendView.page ? '' : 'disabled'} data-pp="-1">‹</button><span>pág. ${S.pendView.page + 1} de ${pages}</span><button class="btn sm" ${S.pendView.page < pages - 1 ? '' : 'disabled'} data-pp="1">›</button>`;
-  $('#pagerPend').querySelectorAll('[data-pp]').forEach(b => b.onclick = () => { S.pendView.page += +b.dataset.pp; renderPend(); });
+    <button class="btn sm" ${V.page ? '' : 'disabled'} data-pp="-1">‹</button><span>pág. ${V.page + 1} de ${pages}</span><button class="btn sm" ${V.page < pages - 1 ? '' : 'disabled'} data-pp="1">›</button>`;
+  $('#pagerPend').querySelectorAll('[data-pp]').forEach(b => b.onclick = () => { V.page += +b.dataset.pp; renderPend(); });
+  $('#pBulk').onclick = async () => {
+    if (!aprovaveis.length) return;
+    const semExec = list.filter(l => l.pend && !l.executorId && l.origem !== 'split').length;
+    if (!await dialog('Aprovar pagamento das guias filtradas?', `${n0(aprovaveis.length)} linha(s) · ${brl(aprovaveis.reduce((a, l) => a + l.valor, 0))} entram na produção e na comissão dos executores.${semExec ? `\n${n0(semExec)} linha(s) sem executor ficam de fora.` : ''}`, { okText: 'Aprovar' })) return;
+    const em = new Date().toISOString();
+    aprovaveis.forEach(l => { S.aprovadas[l.id] = { em, por: S.user?.email || '' }; });
+    run(false); salvar(); toast(`${n0(aprovaveis.length)} guia(s) aprovada(s)`);
+  };
 }
 
 /* somente leitura quando fechada */
@@ -808,7 +832,7 @@ function exportarExcel(R, nomeArquivo) {
   if (R.linhas) {
     const det = R.linhas.map(l => ({ Data: l.data ? l.data.toLocaleDateString('pt-BR') : (l.d || ''), Guia: l.guiaRaw ?? l.g, Atendimento: l.atendimento ?? l.a, Procedimento: l.procedimento ?? l.pr, Paciente: l.paciente ?? l.p, Situação: l.situacao ?? l.s, 'Resp. no sistema': l.dentistaSistema ?? l.ds, Executor: l.en ?? (l.origem === 'split' ? 'Dividida: ' + partesTxt(l.split) : nm(l.executorId)), Origem: ORIG_LBL[l.origem ?? l.o], Comissionável: (l.comissionavel ?? l.c) ? 'Sim' : 'Não', Valor: l.valor ?? l.v, Observação: l.alerta || '' }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(det), 'Detalhamento');
-    if (R.pendentes?.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(R.pendentes.map(l => ({ Data: l.data ? l.data.toLocaleDateString('pt-BR') : '', Guia: l.guiaRaw, Atendimento: l.atendimento, Paciente: l.paciente, Procedimento: l.procedimento, Executor: execTxt(l), 'Motivo da pendência': l.obs || '', Status: l.status || l.situacao, Valor: l.valor }))), 'Guias pendentes');
+    if (R.pendentes?.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(R.pendentes.map(l => ({ Data: l.data ? l.data.toLocaleDateString('pt-BR') : '', Guia: l.guiaRaw, Atendimento: l.atendimento, Paciente: l.paciente, Procedimento: l.procedimento, Executor: execTxt(l), 'Motivo da pendência': l.obs || '', Status: l.status || l.situacao, Valor: l.valor, 'Pgto aprovado': l.aprovado ? 'Sim' : 'Não', 'Aprovado em': S.aprovadas[l.id]?.em ? new Date(S.aprovadas[l.id].em).toLocaleString('pt-BR') : '', 'Aprovado por': S.aprovadas[l.id]?.por || '' }))), 'Guias pendentes');
   }
   if (R.divergencias?.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(R.divergencias.map(d => ({ Atendimento: d.atendimento, 'Guia(s) informada(s)': d.guia, Paciente: d.paciente, 'Informado por': nm(d.informanteId), 'Procedimento informado': d.procInformado, 'Procedimento no sistema': d.procSistema, 'Valor informado': +d.informado.toFixed(2), 'Valor no sistema': +d.sistema.toFixed(2), Diferença: +d.dif.toFixed(2), Decisão: DEC[d.resolucao?.decisao || 'pendente'].replace('⚠ ', ''), 'Atribuído a': d.resolucao ? nm(d.resolucao.dentistaId) : '' }))), 'Divergências');
   if (R.naoEncontradas?.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(R.naoEncontradas.map(x => ({ Data: x.data ? x.data.toLocaleDateString('pt-BR') : '', Guia: x.guia, Atendimento: x.atend, Paciente: x.paciente, Procedimento: x.procedimento, 'Valor informado': x.valor ?? '', 'Informado por': nm(x.informanteId), Decisão: x.decisao?.dentistaId ? 'Atribuído' : x.decisao?.descartado ? 'Não considerar' : 'Pendente', 'Atribuído a': nm(x.decisao?.dentistaId), 'Valor considerado': x.decisao?.dentistaId ? x.decisao.valor : '', Arquivo: x.arquivo }))), 'Não localizados');

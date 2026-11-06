@@ -120,7 +120,7 @@ Comissão: **percentual** sobre a base (situações marcadas), **diária fixa** 
 ---
 
 ## Guias pendentes
-Toda linha com status/situação **Pendente** fica **fora do movimento**: não entra em produção, detalhamento, divergências, base nem comissão. Ela aparece só na aba **Guias pendentes**, com motivo e executor, para acompanhamento.
+Toda linha com status/situação **Pendente** fica **fora do movimento**: não entra em produção, detalhamento, divergências, base nem comissão. Ela aparece só na aba **Guias pendentes**, com motivo e executor. Lá o usuário escolhe o executor (mesmas regras do Resultado) e clica em **Aprovar pgto**. A guia aprovada entra na produção e na comissão. A aprovação fica registrada com data e usuário e pode ser desfeita.
 
 ## Limpar a base (recomeçar)
 Rode `supabase/limpar_base.sql` no SQL Editor. Ele apaga competências, versões, comissões e auditoria, mas mantém usuários, dentistas, especialidades e regras. Depois apague as planilhas em **Storage → planilhas**.
