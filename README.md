@@ -104,6 +104,7 @@ update public.perfis set papel = 'admin' where email = 'pessoa@clinica.com';
 | `comissoes_fechadas` / `comissoes_vigentes` | comissões por dentista e mês (todas / só o último fechamento) |
 | `auditoria` | log de todas as alterações |
 
+
 ---
 
 ## Regras da conciliação
