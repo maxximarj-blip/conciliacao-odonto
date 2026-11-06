@@ -250,7 +250,7 @@ const Core = (() => {
         const i = infs[0];
         if (!i.temValor || Math.abs(i.valor - soma) <= tolAtend) ls.forEach(l => { l.executorId = i.dentistaId; l.origem = 'atendimento'; l.alerta = 'Cruzado pelo ID do atendimento (valor confere)'; });
         else ls.forEach(l => { l.atPendente = i.dentistaId; l.alerta = `Atendimento informado por ${byId[i.dentistaId]?.nome} com valor diferente — decida na divergência`; });
-      } else ls.forEach(l => { l.origem = 'conflito'; l.alerta = 'Atendimento informado por: ' + infs.map(i => byId[i.dentistaId]?.nome).join(', '); });
+      } else ls.forEach(l => { l.origem = 'conflito'; l.candidatos = infs.map(i => i.dentistaId); l.alerta = 'Atendimento informado por: ' + infs.map(i => byId[i.dentistaId]?.nome).join(', '); });
     });
     // sem planilha: dentista do sistema, se cadastrado
     linhas.forEach(l => {

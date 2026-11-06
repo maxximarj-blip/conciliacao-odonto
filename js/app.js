@@ -20,7 +20,7 @@ const S = {
   ro: false,           // competência fechada → somente leitura
   sys: null, denFiles: [],
   situacoes: [], sitBase: new Set(),
-  overrides: {}, diarias: {}, resolucoes: {}, lancamentos: {}, splits: {}, pendView: { dent: '', q: '', page: 0 },
+  overrides: {}, overridesAuto: {}, diarias: {}, resolucoes: {}, lancamentos: {}, splits: {}, pendView: { dent: '', q: '', page: 0 },
   result: null, view: { orig: 'todas', dent: '', q: '', page: 0 }, divView: { f: 'pend', page: 0 },
   editId: null, audFiltro: '',
 };
@@ -195,7 +195,7 @@ async function cadChanged() {
 $('#compMes').onchange = () => { if ($('#compMes').value) abrirCompetencia($('#compMes').value); };
 function resetEstado() {
   S.sys = null; S.denFiles = []; S.situacoes = []; S.sitBase = new Set();
-  S.overrides = {}; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
+  S.overrides = {}; S.overridesAuto = {}; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
   S.view = { orig: 'todas', dent: '', q: '', page: 0 }; S.divView = { f: 'pend', page: 0 };
   $('#tolDiv').value = 1;
 }
@@ -209,7 +209,7 @@ async function abrirCompetencia(mes) {
     S.conc = c || { competencia: comp, novo: true };
     if (c) {
       const regras = c.regras || {}, dec = c.decisoes || {};
-      S.overrides = dec.overrides || {}; S.diarias = dec.diarias || {}; S.resolucoes = dec.resolucoes || {}; S.lancamentos = dec.lancamentos || {}; S.splits = dec.splits || {};
+      S.overrides = dec.overrides || {}; S.diarias = dec.diarias || {}; S.resolucoes = dec.resolucoes || {}; S.lancamentos = dec.lancamentos || {}; S.splits = dec.splits || {}; S.overridesAuto = dec.overridesAuto || {};
       if (regras.tolDiv != null) $('#tolDiv').value = regras.tolDiv;
       const arqs = await q(sb.from('conciliacao_arquivos').select('*').eq('conciliacao_id', c.id).eq('ativo', true).order('enviado_em'), 'Arquivos');
       const sysA = arqs.filter(a => a.tipo === 'sistema').pop();
@@ -246,7 +246,7 @@ async function enviarArquivo(file, tipo, dentistaId) {
   return q(sb.from('conciliacao_arquivos').insert({ conciliacao_id: c.id, tipo, nome: file.name, dentista_id: dentistaId || null, storage_path: path, tamanho: file.size }).select().single(), 'Registrar arquivo');
 }
 const regrasAtuais = () => ({ sitBase: [...S.sitBase], tolDiv: Math.max(0, +$('#tolDiv').value || 0) });
-const decisoesAtuais = () => ({ overrides: S.overrides, diarias: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits });
+const decisoesAtuais = () => ({ overrides: S.overrides, diarias: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, overridesAuto: S.overridesAuto });
 const totaisAtuais = () => {
   if (!S.result) return {};
   const T = S.result.tot;
@@ -330,7 +330,7 @@ setupDrop($('#dropSys'), $('#fileSys'), async files => {
     const antigo = S.sys?.arquivoId;
     const arq = await enviarArquivo(f, 'sistema');
     if (antigo) await q(sb.from('conciliacao_arquivos').update({ ativo: false }).eq('id', antigo), 'Arquivo anterior');
-    S.overrides = {}; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
+    S.overrides = {}; S.overridesAuto = {}; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
     montarSistema(f.name, sheets, arq.id, null);
     S.denFiles.forEach(df => analyzeDen(df, false));
     renderAllConc(); run(false); salvar();
@@ -483,7 +483,7 @@ function renderResult() {
       <div class="bar2"><i style="width:${w(T.viaDentista)};background:var(--ok)"></i><i style="width:${w(T.viaSistema)};background:var(--info)"></i><i style="width:${w(T.manual)};background:#6b46c1"></i><i style="width:${w(T.conflitos)};background:var(--warn)"></i></div></div>
     <div class="kpi ${T.naoIdent + T.conflitos ? 'bad' : ''}"><span>Sem executor</span><b>${brl(T.naoIdentValor)}</b><small>${n0(T.naoIdent)} linhas · ${n0(T.conflitos)} conflitos</small></div>
     <div class="kpi ${T.pendencias ? 'bad' : ''}" style="cursor:pointer" id="kpiPend"><span>Pendências p/ decidir</span><b>${n0(T.pendencias)}</b><small>${n0(T.divPend)} diverg. · ${n0(T.neAbertos)} não localiz. · ${n0(T.conflitos)} confl.</small></div>`;
-  renderResumo(); renderSeg(); renderDet(); renderNE(); renderDiv(); renderPend();
+  renderResumo(); renderSeg(); renderDet(); renderNE(); renderDiv(); renderPend(); renderAutoResp();
   $('#kpiPend').onclick = () => (T.divPend ? $('#cardDiv') : T.neAbertos ? $('#cardNE') : $('#tblDet')).scrollIntoView({ behavior: 'smooth', block: 'start' });
   applyRO();
 }
@@ -525,6 +525,51 @@ function renderSeg() {
 }
 $('#fDent').onchange = e => { S.view.dent = e.target.value; S.view.page = 0; renderDet(); };
 $('#fBusca').oninput = e => { S.view.q = e.target.value; S.view.page = 0; renderDet(); };
+/* ===== Associar pelo Resp. no sistema (resolve conflitos) ===== */
+function analisarResp() {
+  const out = { aplicar: [], genericos: [], semCadastro: [], fora: [] };
+  S.result.linhas.filter(l => l.origem === 'conflito' && !l.executorId).forEach(l => {
+    if (GENERIC.test(l.dentistaSistema || '')) { out.genericos.push(l); return; }
+    const d = Core.matchDentist(l.dentistaSistema, ativos());
+    if (!d) { out.semCadastro.push(l); return; }
+    if ((l.candidatos || []).includes(d.id)) out.aplicar.push([l, d]); else out.fora.push(l);
+  });
+  return out;
+}
+$('#btnAutoResp').onclick = async () => {
+  if (S.ro || !S.result) return;
+  const a = analisarResp();
+  const total = a.aplicar.length + a.genericos.length + a.semCadastro.length + a.fora.length;
+  if (!total) { toast('Nenhum conflito para resolver.'); return; }
+  const g = n => n ? `\n• ${n}` : '';
+  const txt = `Dos ${n0(total)} conflito(s):` +
+    `\n✓ ${n0(a.aplicar.length)} será(ão) associado(s) ao dentista do "Resp. no sistema" (${brl(a.aplicar.reduce((x, [l]) => x + l.valor, 0))})` +
+    (a.genericos.length ? `\n⚠ ${n0(a.genericos.length)} fica(m) pendente(s): Resp. genérico (Clínico Geral, Sem Dentista…)` : '') +
+    (a.semCadastro.length ? `\n⚠ ${n0(a.semCadastro.length)} fica(m) pendente(s): Resp. no sistema não está cadastrado` : '') +
+    (a.fora.length ? `\n⚠ ${n0(a.fora.length)} fica(m) pendente(s): Resp. no sistema não está entre os dentistas que informaram a guia` : '') +
+    `\n\nConsultas odontológicas continuam com a regra (CLINICA). Dá para desfazer depois.`;
+  if (!a.aplicar.length) { await dialog('Nada a associar automaticamente', txt, { okText: 'Entendi' }); return; }
+  if (!await dialog('Associar pelo Resp. no sistema?', txt, { okText: `Associar ${n0(a.aplicar.length)} linha(s)` })) return;
+  a.aplicar.forEach(([l, d]) => { S.overrides[l.id] = d.id; S.overridesAuto[l.id] = true; });
+  run(false); salvar();
+  toast(`${n0(a.aplicar.length)} linha(s) associadas · ${n0(total - a.aplicar.length)} continuam em conflito para avaliar`);
+  S.view.orig = 'conflito'; S.view.page = 0; renderSeg(); renderDet();
+};
+$('#btnAutoRespUndo').onclick = async () => {
+  const ids = Object.keys(S.overridesAuto);
+  if (!ids.length) { toast('Não há associações automáticas para desfazer.'); return; }
+  if (!await dialog('Desfazer associação automática?', `${n0(ids.length)} linha(s) voltam a ficar como estavam antes do botão (em conflito). Trocas manuais feitas depois não são afetadas.`, { okText: 'Desfazer' })) return;
+  ids.forEach(id => { delete S.overrides[id]; delete S.overridesAuto[id]; });
+  run(false); salvar(); toast('Associação automática desfeita');
+};
+function renderAutoResp() {
+  const n = S.result ? S.result.linhas.filter(l => l.origem === 'conflito' && !l.executorId).length : 0;
+  const u = Object.keys(S.overridesAuto).length;
+  $('#btnAutoResp').innerHTML = `⚡ Associar pelo Resp. no sistema${n ? ` <span class="cnt" style="background:var(--warnSoft);color:var(--warn)">${n0(n)}</span>` : ''}`;
+  $('#btnAutoResp').disabled = S.ro || !n;
+  $('#btnAutoRespUndo').classList.toggle('hide', !u || S.ro);
+  $('#btnAutoRespUndo').textContent = `Desfazer (${n0(u)})`;
+}
 const PAGE = 50;
 function renderDet() {
   const list = filtered();
@@ -540,7 +585,7 @@ function renderDet() {
     <td title="${esc(l.paciente)}${l.convenio ? ' · ' + esc(l.convenio) : ''}">${esc(l.paciente || '—')}</td>
     <td><span class="${S.sitBase.has(l.situacao) ? '' : 'muted'}">${esc(l.situacao)}</span></td>
     <td title="${esc(l.dentistaSistema)}" class="${GENERIC.test(l.dentistaSistema) ? 'muted' : ''}">${esc(l.dentistaSistema)}</td>
-    <td title="${esc(l.alerta || l.regraTxt || ORIG_LBL[l.origem])}"><div class="row" style="gap:4px;flex-wrap:nowrap"><span class="dot" style="background:${{ dentista: 'var(--ok)', atendimento: '#3fae7f', sistema: 'var(--info)', manual: '#6b46c1', nao_identificado: 'var(--bad)', conflito: 'var(--warn)', split: '#2f6fb0', regra: '#0e6b63' }[l.origem]}"></span>
+    <td title="${esc(S.overridesAuto[l.id] && l.origem === 'manual' ? 'Associado pelo botão Resp. no sistema' : (l.alerta || l.regraTxt || ORIG_LBL[l.origem]))}"><div class="row" style="gap:4px;flex-wrap:nowrap"><span class="dot" style="background:${{ dentista: 'var(--ok)', atendimento: '#3fae7f', sistema: 'var(--info)', manual: '#6b46c1', nao_identificado: 'var(--bad)', conflito: 'var(--warn)', split: '#2f6fb0', regra: '#0e6b63' }[l.origem]}"></span>
       <select class="inp" data-ov="${l.id}" style="flex:1;min-width:0">${l.origem === 'split' ? `<option value="_cur" selected>÷ ${esc(partesTxt(l.split))}</option>` : ''}${dentOpts(l.executorId, l.origem === 'conflito' ? '⚠ escolher…' : '— sem executor —')}<option value="_split">÷ Dividir guia entre dentistas…</option></select>${l.alerta ? '<span title="' + esc(l.alerta) + '" style="color:var(--warn);cursor:help">⚠</span>' : ''}</div></td>
     <td class="num">${brl(l.valor)}</td></tr>`).join('') : `<tr><td colspan="8" class="empty">Nenhuma linha neste filtro.</td></tr>`}</tbody>`;
   $('#tblDet').querySelectorAll('[data-ov]').forEach(s => s.onchange = async () => {
@@ -557,7 +602,7 @@ function renderDet() {
     }
     if (daDivergencia) { toast('Esta linha foi dividida na divergência de valor. Ajuste por lá.'); renderDet(); return; }
     if (S.splits[l.guia]) { delete S.splits[l.guia]; toast(`Divisão da guia ${l.guiaRaw} removida`); }
-    S.overrides[s.dataset.ov] = s.value; run(false); salvar();
+    S.overrides[s.dataset.ov] = s.value; delete S.overridesAuto[s.dataset.ov]; run(false); salvar();
   });
   const sum = list.reduce((a, l) => a + l.valor, 0);
   $('#pager').innerHTML = `<span>${n0(list.length)} linhas · ${brl(sum)}</span><span class="sp"></span>

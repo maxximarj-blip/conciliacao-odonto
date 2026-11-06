@@ -162,7 +162,7 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
     <button data-tab="esp">Especialidades</button>
     <button data-tab="hist">Histórico</button>
   </nav>
-  <div class="user" title="versão 2026.11.06-5"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
+  <div class="user" title="versão 2026.11.06-6"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
 </div></header>
 
 <div class="wrap">
@@ -223,7 +223,7 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
       <p class="muted" style="font-size:12px;margin:10px 0 0">Diárias = dias distintos com atendimento comissionável. Você pode ajustar o número de diárias direto na tabela.</p>
     </div>
     <div class="card sect">
-      <div class="row" style="margin-bottom:10px"><h3 style="margin:0">Detalhamento das guias</h3><span class="sp"></span><span class="muted" style="font-size:12px">Altere o executor na coluna "Executor" para corrigir manualmente.</span></div>
+      <div class="row" style="margin-bottom:10px"><h3 style="margin:0">Detalhamento das guias</h3><span class="sp"></span><span class="muted" style="font-size:12px">Altere o executor na coluna "Executor" para corrigir manualmente.</span><button class="btn sm ghost hide" id="btnAutoRespUndo"></button><button class="btn sm" id="btnAutoResp" title="Resolve conflitos usando o dentista do Resp. no sistema (quando ele é um dos que informaram a guia)">⚡ Associar pelo Resp. no sistema</button></div>
       <div class="filters">
         <div class="seg" id="segOrig"></div>
         <select class="inp" id="fDent" style="width:220px"></select>
@@ -321,7 +321,7 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
     <label class="fld"><span>E-mail</span><input class="inp" id="lgEmail" type="email" autocomplete="username" required></label>
     <label class="fld" style="margin-top:10px"><span>Senha</span><input class="inp" id="lgSenha" type="password" autocomplete="current-password" required></label>
     <button class="btn pri" style="width:100%;justify-content:center;margin-top:16px" id="lgBtn">Entrar</button>
-    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.06-5</p>
+    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.06-6</p>
     <p class="muted" id="lgMsg" style="font-size:12.5px;min-height:18px;margin:10px 0 0"></p>
     <div class="lg-links"><a href="#" id="lnkAcesso">Solicitar acesso</a><span>·</span><a href="#" id="lnkSenha">Esqueci minha senha</a></div>
   </form>
@@ -356,8 +356,8 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
 
 <script src="js/vendor/xlsx.full.min.js"></script>
 <script src="js/vendor/supabase.js"></script>
-<script src="js/config.js?v=2026.11.06-5"></script>
-<script src="js/core.js?v=2026.11.06-5"></script>
-<script src="js/app.js?v=2026.11.06-5"></script>
+<script src="js/config.js?v=2026.11.06-6"></script>
+<script src="js/core.js?v=2026.11.06-6"></script>
+<script src="js/app.js?v=2026.11.06-6"></script>
 </body>
 </html>

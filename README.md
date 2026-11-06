@@ -112,7 +112,8 @@ update public.perfis set papel = 'admin' where email = 'pessoa@clinica.com';
 2. Guia informada por mais de um dentista → **conflito**, o usuário escolhe.
 3. Lançamento sem guia válida, só com o ID do atendimento → atribui se o valor bater (tolerância). Se não bater, vira **divergência**.
 4. Sem planilha de dentista → usa o dentista do sistema, se estiver cadastrado.
-5. Divergências de valor e lançamentos não localizados são decididos pelo usuário e entram na comissão como ajustes.
+5. Botão **⚡ Associar pelo Resp. no sistema** (detalhamento): resolve conflitos atribuindo a linha ao Resp. no sistema quando ele é um dentista cadastrado e está entre os que informaram a guia. Resp. genérico (Clínico Geral I/II, Sem Dentista…) ou sem cadastro fica pendente para avaliação. Consultas seguem a regra (CLINICA). Pode ser desfeito.
+6. Divergências de valor e lançamentos não localizados são decididos pelo usuário e entram na comissão como ajustes.
 
 Comissão: **percentual** sobre a base (situações marcadas), **diária fixa** × dias com atendimento, ou **valor fixo** mensal. O padrão vem da especialidade, e o cadastro do dentista pode sobrescrever.
 
