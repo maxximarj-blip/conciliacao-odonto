@@ -89,6 +89,82 @@ $('#loginForm').onsubmit = async e => {
   $('#lgMsg').textContent = '';
 };
 $('#btnSair').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+/* ----- Solicitar acesso / Esqueci minha senha ----- */
+let reqTipo = 'acesso';
+function abrirReq(tipo) {
+  reqTipo = tipo;
+  $('#loginForm').classList.add('hide'); $('#reqForm').classList.remove('hide');
+  $('#reqTitle').textContent = tipo === 'acesso' ? 'Solicitar acesso' : 'Esqueci minha senha';
+  $('#reqHint').textContent = tipo === 'acesso' ? 'Preencha seus dados. O administrador vai analisar e enviar o acesso para o seu e-mail.' : 'Informe o e-mail cadastrado. O administrador vai redefinir sua senha e te avisar por e-mail.';
+  $('#reqNomeBox').classList.toggle('hide', tipo !== 'acesso'); $('#reqNome').required = tipo === 'acesso';
+  $('#reqMsgBox').querySelector('span').textContent = tipo === 'acesso' ? 'Função / observação' : 'Observação (opcional)';
+  $('#reqEmail').value = $('#lgEmail').value || ''; $('#reqOut').textContent = ''; $('#reqBtn').disabled = false;
+  setTimeout(() => (tipo === 'acesso' ? $('#reqNome') : $('#reqEmail')).focus(), 50);
+}
+$('#lnkAcesso').onclick = e => { e.preventDefault(); abrirReq('acesso'); };
+$('#lnkSenha').onclick = e => { e.preventDefault(); abrirReq('senha'); };
+$('#lnkVoltar').onclick = e => { e.preventDefault(); $('#reqForm').classList.add('hide'); $('#loginForm').classList.remove('hide'); };
+async function notificarEmail(dados) {
+  const destino = CFG.emailSolicitacoes; if (!destino) return;
+  try {
+    await fetch('https://formsubmit.co/ajax/' + encodeURIComponent(destino), {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ _subject: `[Conciliação Odonto] ${dados.tipo === 'acesso' ? 'Solicitação de acesso' : 'Redefinição de senha'} — ${dados.email}`, _template: 'table', _captcha: 'false',
+        Tipo: dados.tipo === 'acesso' ? 'Solicitar acesso' : 'Esqueci minha senha', Nome: dados.nome || '—', email: dados.email, Mensagem: dados.mensagem || '—', Sistema: location.href.split('#')[0] }),
+    });
+  } catch (e) { console.warn('Aviso por e-mail não enviado', e); }
+}
+$('#reqForm').onsubmit = async e => {
+  e.preventDefault();
+  const out = $('#reqOut');
+  const dados = { tipo: reqTipo, nome: reqTipo === 'acesso' ? $('#reqNome').value.trim() : null, email: $('#reqEmail').value.trim().toLowerCase(), mensagem: $('#reqMsg').value.trim() || null };
+  if (reqTipo === 'acesso' && !dados.nome) { out.style.color = 'var(--bad)'; out.textContent = 'Informe seu nome.'; return; }
+  $('#reqBtn').disabled = true; out.style.color = 'var(--ink2)'; out.textContent = 'Enviando…';
+  const { error } = await sb.from('solicitacoes').insert(dados);
+  if (error) { $('#reqBtn').disabled = false; out.style.color = 'var(--bad)'; out.textContent = /Muitas/.test(error.message) ? error.message : /check constraint|email/i.test(error.message) ? 'Confira o e-mail digitado.' : 'Não foi possível enviar agora. Tente novamente.'; return; }
+  await notificarEmail(dados);
+  out.style.color = 'var(--ok)'; out.textContent = '✓ Solicitação enviada! Você receberá o retorno por e-mail.';
+  $('#reqNome').value = ''; $('#reqMsg').value = '';
+};
+
+/* ----- Painel de solicitações (admin) ----- */
+let solFiltro = 'pendente';
+async function contarSolicitacoes() {
+  if (S.perfil?.papel !== 'admin') return;
+  const { count } = await sb.from('solicitacoes').select('id', { count: 'exact', head: true }).eq('status', 'pendente');
+  $('#btnSol').classList.remove('hide'); $('#solCnt').textContent = count ? `(${count})` : '';
+}
+$('#btnSol').onclick = () => { $('#solModal').classList.add('on'); carregarSolicitacoes(); };
+$('#solFechar').onclick = () => $('#solModal').classList.remove('on');
+document.querySelectorAll('#segSol button').forEach(b => b.onclick = () => { document.querySelectorAll('#segSol button').forEach(x => x.classList.toggle('on', x === b)); solFiltro = b.dataset.s; carregarSolicitacoes(); });
+const senhaTemp = () => { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'; let s = ''; const a = crypto.getRandomValues(new Uint32Array(10)); a.forEach(n => s += c[n % c.length]); return s; };
+async function carregarSolicitacoes() {
+  const el = $('#solList'); el.innerHTML = '<p class="muted">Carregando…</p>';
+  try {
+    const rows = await q(sb.from('solicitacoes').select('*').eq('status', solFiltro).order('criado_em', { ascending: false }).limit(100), 'Solicitações');
+    if (!rows.length) { el.innerHTML = `<p class="empty">${solFiltro === 'pendente' ? '✓ Nenhuma solicitação pendente.' : 'Nada aqui.'}</p>`; return; }
+    el.innerHTML = rows.map(r => {
+      const pw = senhaTemp();
+      const sqlSenha = `update auth.users set encrypted_password = extensions.crypt('${pw}', extensions.gen_salt('bf')), updated_at = now()\nwhere email = '${r.email}';`;
+      return `<div class="sol"><div class="top"><span class="pill ${r.tipo === 'acesso' ? 'novo' : 'rasc'}">${r.tipo === 'acesso' ? 'Solicitar acesso' : 'Esqueci minha senha'}</span>
+        <b>${esc(r.nome || r.email)}</b><span class="muted">${esc(r.email)}</span><span class="sp"></span><span class="muted" style="font-size:12px">${dtf(r.criado_em)}</span></div>
+        ${r.mensagem ? `<div style="margin-top:6px;font-size:13px">${esc(r.mensagem)}</div>` : ''}
+        ${r.status === 'pendente' ? (r.tipo === 'acesso'
+          ? `<div class="muted" style="font-size:12.5px;margin-top:8px">Para liberar: Supabase → <b>Authentication → Users → Add user</b> → e-mail <b>${esc(r.email)}</b>, senha <b class="mono">${pw}</b>, marque <i>Auto Confirm User</i>. Depois envie a senha à pessoa e marque como atendida.</div>`
+          : `<div class="muted" style="font-size:12.5px;margin-top:8px">Rode no Supabase → <b>SQL Editor</b> (senha temporária já gerada) e envie a nova senha à pessoa:</div><pre>${esc(sqlSenha)}</pre>`)
+          + `<div class="row" style="margin-top:8px;gap:6px"><button class="btn sm" data-copy="${esc(r.tipo === 'acesso' ? `E-mail: ${r.email}\nSenha: ${pw}` : sqlSenha)}">Copiar ${r.tipo === 'acesso' ? 'dados' : 'SQL'}</button><button class="btn sm" data-msg="${esc(`Olá${r.nome ? ', ' + r.nome.split(' ')[0] : ''}! ${r.tipo === 'acesso' ? 'Seu acesso' : 'Sua senha'} ao sistema de Conciliação foi ${r.tipo === 'acesso' ? 'liberado' : 'redefinida'}.\n\nEndereço: ${location.href.split('#')[0]}\nE-mail: ${r.email}\nSenha: ${pw}\n\nRecomendamos guardar esta senha em local seguro.`)}">Copiar mensagem p/ enviar</button><span class="sp"></span>
+            <button class="btn sm ghost danger" data-st="recusada" data-id="${r.id}">Recusar</button><button class="btn sm pri" data-st="atendida" data-id="${r.id}">Marcar como atendida</button></div>`
+        : `<div class="muted" style="font-size:12px;margin-top:6px">${r.status === 'atendida' ? '✓ Atendida' : '✕ Recusada'} em ${dtf(r.atualizado_em)}${r.observacao ? ' · ' + esc(r.observacao) : ''}</div>`}</div>`;
+    }).join('');
+    el.querySelectorAll('[data-copy],[data-msg]').forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy ?? b.dataset.msg); toast('Copiado'); } catch { toast('Não consegui copiar; selecione o texto manualmente.'); } });
+    el.querySelectorAll('[data-st]').forEach(b => b.onclick = async () => {
+      const obs = await dialog(b.dataset.st === 'atendida' ? 'Marcar como atendida?' : 'Recusar solicitação?', 'Fica registrado na auditoria.', { input: true, placeholder: 'Observação (opcional)', okText: 'Confirmar' });
+      if (obs === null) return;
+      try { await q(sb.from('solicitacoes').update({ status: b.dataset.st, observacao: obs || null }).eq('id', b.dataset.id), 'Atualizar'); toast('Solicitação atualizada'); carregarSolicitacoes(); contarSolicitacoes(); } catch (e) { fail(e); }
+    });
+  } catch (e) { el.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
+}
+
 let started = false;
 sb.auth.onAuthStateChange((ev, session) => {
   if (session?.user && !started) { started = true; S.user = session.user; boot(); }
@@ -102,6 +178,7 @@ async function boot() {
     S.perfil = await q(sb.from('perfis').select('*').eq('id', S.user.id).maybeSingle());
     $('#userChip').innerHTML = `<b>${esc(S.perfil?.nome || S.user.email)}</b> · ${S.perfil?.papel === 'admin' ? 'admin' : 'operador'}`;
     await loadCadastro();
+    contarSolicitacoes();
     const d = new Date(); d.setMonth(d.getMonth() - 1);
     $('#compMes').value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     await abrirCompetencia($('#compMes').value);
@@ -729,7 +806,7 @@ async function loadVersoes(id, comp) {
   } catch (e) { toast(e.message); }
 }
 document.querySelectorAll('#segAud button').forEach(b => b.onclick = () => { document.querySelectorAll('#segAud button').forEach(x => x.classList.toggle('on', x === b)); S.audFiltro = b.dataset.a; loadAuditoria(); });
-const TAB_LBL = { conciliacoes: 'Conciliação', conciliacao_arquivos: 'Arquivo', dentistas: 'Dentista', especialidades: 'Especialidade' };
+const TAB_LBL = { solicitacoes: 'Solicitação', conciliacoes: 'Conciliação', conciliacao_arquivos: 'Arquivo', dentistas: 'Dentista', especialidades: 'Especialidade' };
 const IGN = new Set(['atualizado_em', 'atualizado_por', 'criado_em', 'criado_por', 'totais', 'id']);
 function descAud(a) {
   const d = a.depois || {}, b = a.antes || {};

@@ -343,6 +343,53 @@ revoke all on public.comissoes_vigentes from anon;
 grant select on public.comissoes_vigentes to authenticated;
 
 -- ---------------------------------------------------------------------
+-- Solicitações da tela de login (acesso / esqueci minha senha)
+-- Qualquer pessoa pode ENVIAR; só admin vê e atende.
+-- ---------------------------------------------------------------------
+create table if not exists public.solicitacoes (
+  id             uuid primary key default gen_random_uuid(),
+  tipo           text not null check (tipo in ('acesso','senha')),
+  nome           text check (char_length(nome) <= 120),
+  email          text not null check (char_length(email) between 5 and 160 and email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$'),
+  mensagem       text check (char_length(mensagem) <= 1000),
+  status         text not null default 'pendente' check (status in ('pendente','atendida','recusada')),
+  observacao     text,
+  criado_em      timestamptz not null default now(),
+  atualizado_em  timestamptz not null default now(),
+  atualizado_por uuid
+);
+create index if not exists solicitacoes_status_idx on public.solicitacoes (status, criado_em desc);
+
+-- anti-abuso: no máximo 3 pedidos por e-mail a cada 24h
+create or replace function public.tg_limite_solicitacoes() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  new.email := lower(trim(new.email));
+  if tg_op = 'INSERT' then
+    new.status := 'pendente'; new.observacao := null;
+    if (select count(*) from public.solicitacoes where email = new.email and criado_em > now() - interval '24 hours') >= 3 then
+      raise exception 'Muitas solicitações para este e-mail. Tente novamente amanhã.';
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists limite_solicitacoes on public.solicitacoes;
+create trigger limite_solicitacoes before insert on public.solicitacoes for each row execute function public.tg_limite_solicitacoes();
+drop trigger if exists aud_solicitacoes on public.solicitacoes;
+create trigger aud_solicitacoes before update on public.solicitacoes for each row execute function public.tg_auditoria();
+
+alter table public.solicitacoes enable row level security;
+drop policy if exists sol_enviar on public.solicitacoes;
+create policy sol_enviar on public.solicitacoes for insert to anon, authenticated with check (status = 'pendente');
+drop policy if exists sol_admin_ler on public.solicitacoes;
+create policy sol_admin_ler on public.solicitacoes for select to authenticated using (public.eh_admin());
+drop policy if exists sol_admin_alterar on public.solicitacoes;
+create policy sol_admin_alterar on public.solicitacoes for update to authenticated using (public.eh_admin()) with check (public.eh_admin());
+revoke all on public.solicitacoes from anon, authenticated;
+grant insert (tipo, nome, email, mensagem) on public.solicitacoes to anon, authenticated;
+grant select, update (status, observacao) on public.solicitacoes to authenticated;
+
+-- ---------------------------------------------------------------------
 -- Storage: bucket privado com as planilhas originais (sem apagar)
 -- ---------------------------------------------------------------------
 insert into storage.buckets (id, name, public) values ('planilhas', 'planilhas', false)

@@ -25,6 +25,7 @@ window.APP_CONFIG = {
   supabaseUrl: 'https://xxxxxxxx.supabase.co',
   supabaseAnonKey: 'eyJhbGciOi...',
   clinica: 'Odonto Premier',
+  emailSolicitacoes: 'maxximarj@gmail.com',
 };
 ```
 
@@ -49,6 +50,20 @@ Em **Authentication** → **URL Configuration**, coloque o endereço do GitHub P
 |---|---|
 | **admin** | tudo, inclusive **reabrir** uma competência fechada (com motivo obrigatório) |
 | **operador** | cadastrar, subir planilhas, decidir divergências, salvar versões e fechar a competência |
+
+### Solicitar acesso e Esqueci minha senha
+Na tela de login há duas opções:
+- **Solicitar acesso:** a pessoa informa nome, e-mail e função.
+- **Esqueci minha senha:** a pessoa informa o e-mail.
+
+Cada pedido fica gravado na tabela `solicitacoes` e envia um aviso para o e-mail definido em `emailSolicitacoes` no `js/config.js`. O envio usa o serviço gratuito FormSubmit.
+- **Primeira vez:** o FormSubmit manda um e-mail de **ativação** para esse endereço. Clique em *Activate Form* uma única vez, senão os avisos não chegam.
+- **Limite:** no máximo 3 pedidos por e-mail a cada 24h.
+
+O admin vê os pedidos no botão **Solicitações** (no topo do sistema):
+- **Acesso:** o painel mostra os dados e uma senha gerada. Crie o usuário no Supabase (**Authentication → Users → Add user**) e use **Copiar mensagem p/ enviar** para avisar a pessoa.
+- **Senha:** o painel já traz o SQL de redefinição pronto. Rode no **SQL Editor** e envie a mensagem.
+- Depois, marque o pedido como **atendido** ou **recusado**. Isso fica na auditoria.
 
 Para tornar alguém admin, rode no SQL Editor:
 ```sql
