@@ -259,8 +259,23 @@ const Core = (() => {
       if (sd) { l.executorId = sd.id; l.origem = 'sistema'; }
     });
 
-    // ---- etapa 2: divergências (sobre a atribuição automática)
+    // ---- etapa 2: decisões linha a linha (valem antes das divergências)
+    const extras = []; // ajustes de valor, lançamentos atribuídos e divisões entre dentistas
+    const inBase = l => l.aprovado || baseSet.size === 0 || baseSet.has(l.situacao);
+    const nomeParts = partes => partes.map(p => `${byId[p.dentistaId]?.nome || '?'} ${Math.round(p.pct * 100) / 100}%`).join(' · ');
+    const partesOk = partes => Array.isArray(partes) && partes.filter(p => p.dentistaId && p.pct > 0).length >= 1;
+    const dividirLinha = (l, partes, motivo) => {
+      l.executorId = null; l.origem = 'split'; l.atPendente = null; l.split = partes; l.alerta = `${motivo}: ${nomeParts(partes)}`;
+      partes.forEach(p => { if (p.dentistaId && p.pct > 0) extras.push({ tipo: 'split', dentistaId: p.dentistaId, valor: l.valor * p.pct / 100, comissionavel: inBase(l), data: l.data, guia: l.guia, linhaId: l.id, ref: l.guiaRaw, paciente: l.paciente, descricao: `${l.procedimento} (${p.pct}%)` }); });
+    };
+    linhas.forEach(l => {
+      if (overrides[l.id] !== undefined) { l.executorId = overrides[l.id] || null; l.origem = l.executorId ? 'manual' : 'nao_identificado'; l.atPendente = null; l.temOverride = true; }
+    });
+    linhas.forEach(l => { const sp = splits[l.guia]; if (sp && partesOk(sp.partes) && !l.pend && l.origem !== 'split' && !(l.regra && !l.temOverride)) dividirLinha(l, sp.partes, 'Guia dividida'); });
+
+    // ---- etapa 3: divergências (sobre a atribuição já com as decisões linha a linha)
     const divergencias = [];
+    const keyLinha = l => l.atendimento ? 'a:' + l.atendimento : 'g:' + l.guia;
     files.forEach(f => {
       if (!f.temValor) return;
       const inf = new Map();
@@ -276,48 +291,38 @@ const Core = (() => {
         const tp = k[0], key = k.slice(2);
         const doKey = linhas.filter(l => (tp === 'g' ? l.guia === key : l.atendimento === key));
         if (doKey.length && doKey.every(l => l.pend)) return; // tudo pendente: fora do movimento
-        const afetadas = doKey.filter(l => !l.pend && !l.regra && (l.executorId === f.dentistaId || (!l.executorId && l.origem !== 'conflito')));
-        const sis = afetadas.reduce((a, l) => a + l.valor, 0);
+        const afetadas = doKey.filter(l => !l.pend && !l.regra && l.origem !== 'split' && (l.executorId === f.dentistaId || (!l.executorId && l.origem !== 'conflito')));
+        const partes = extras.filter(e => e.tipo === 'split' && e.dentistaId === f.dentistaId && e.linhaId != null && keyLinha(linhas[e.linhaId]) === k);
+        const sis = afetadas.reduce((a, l) => a + l.valor, 0) + partes.reduce((a, e) => a + e.valor, 0);
         if (Math.abs(o.valor - sis) <= Math.max(0.05, tolDiv)) {
           afetadas.forEach(l => { if (!l.executorId) { l.executorId = f.dentistaId; l.origem = 'atendimento'; l.atPendente = null; l.alerta = 'Mesmo atendimento de guia informada; valor total confere'; } });
           return;
         }
         const id = f.name + '|' + k;
-        divergencias.push({ id, arquivo: f.name, informanteId: f.dentistaId, atendimento: tp === 'a' ? key : '', guia: [...o.guias].join(', ') || '—', paciente: o.paciente, data: o.data,
-          procInformado: o.procs.join('; '), procSistema: afetadas.map(l => l.procedimento).join('; '), linhaIds: afetadas.map(l => l.id), pendentes: afetadas.filter(l => !l.executorId).length,
+        divergencias.push({ id, key: k, arquivo: f.name, informanteId: f.dentistaId, atendimento: tp === 'a' ? key : '', guia: [...o.guias].join(', ') || '—', paciente: o.paciente, data: o.data,
+          procInformado: o.procs.join('; '), procSistema: afetadas.map(l => l.procedimento).concat(partes.map(e => e.descricao)).join('; '), linhaIds: afetadas.map(l => l.id),
+          pendentes: afetadas.filter(l => !l.executorId).length, conflitos: doKey.filter(l => l.origem === 'conflito' && !l.executorId).length,
           informado: o.valor, sistema: sis, dif: o.valor - sis, resolucao: resolucoes[id] || null });
       });
     });
     divergencias.sort((a, b) => Math.abs(b.dif) - Math.abs(a.dif));
 
-    // ---- etapa 3: decisões do usuário
-    const extras = []; // ajustes de valor, lançamentos atribuídos e divisões entre dentistas
-    const inBase = l => l.aprovado || baseSet.size === 0 || baseSet.has(l.situacao);
-    const nomeParts = partes => partes.map(p => `${byId[p.dentistaId]?.nome || '?'} ${Math.round(p.pct * 100) / 100}%`).join(' · ');
-    const partesOk = partes => Array.isArray(partes) && partes.filter(p => p.dentistaId && p.pct > 0).length >= 1;
-    const dividirLinha = (l, partes, motivo) => {
-      l.executorId = null; l.origem = 'split'; l.atPendente = null; l.split = partes; l.alerta = `${motivo}: ${nomeParts(partes)}`;
-      partes.forEach(p => { if (p.dentistaId && p.pct > 0) extras.push({ tipo: 'split', dentistaId: p.dentistaId, valor: l.valor * p.pct / 100, comissionavel: inBase(l), data: l.data, guia: l.guia, ref: l.guiaRaw, paciente: l.paciente, descricao: `${l.procedimento} (${p.pct}%)` }); });
-    };
+    // ---- etapa 4: decisões das divergências (troca manual na linha continua valendo por cima)
     divergencias.forEach(d => {
       const r = d.resolucao; if (!r || !r.decisao || r.decisao === 'pendente') return;
+      const ids = d.linhaIds.filter(i => !linhas[i].temOverride);
       if (r.decisao === 'split') {
         if (!partesOk(r.partes)) return;
         if (r.base === 'informado') {
-          d.linhaIds.forEach(i => { const l = linhas[i]; l.executorId = null; l.origem = 'split'; l.atPendente = null; l.split = r.partes; l.alerta = 'Dividida (valor informado): ' + nomeParts(r.partes); l.splitInformado = true; });
-          r.partes.forEach(p => { if (p.dentistaId && p.pct > 0) extras.push({ tipo: 'split', dentistaId: p.dentistaId, valor: d.informado * p.pct / 100, comissionavel: true, data: d.data || null, guia: null, ref: d.atendimento || d.guia, paciente: d.paciente, descricao: `Divisão do valor informado (${p.pct}%)` }); });
-        } else d.linhaIds.forEach(i => dividirLinha(linhas[i], r.partes, 'Dividida'));
+          ids.forEach(i => { const l = linhas[i]; l.executorId = null; l.origem = 'split'; l.atPendente = null; l.split = r.partes; l.alerta = 'Dividida (valor informado): ' + nomeParts(r.partes); l.splitInformado = true; });
+          r.partes.forEach(p => { if (p.dentistaId && p.pct > 0) extras.push({ tipo: 'split', dentistaId: p.dentistaId, valor: d.informado * p.pct / 100, comissionavel: true, data: d.data || null, guia: null, key: d.key, ref: d.atendimento || d.guia, paciente: d.paciente, descricao: `Divisão do valor informado (${p.pct}%)` }); });
+        } else ids.forEach(i => dividirLinha(linhas[i], r.partes, 'Dividida'));
         return;
       }
       const alvo = r.dentistaId || null;
-      d.linhaIds.forEach(i => { const l = linhas[i]; l.executorId = alvo; l.origem = alvo ? 'manual' : 'nao_identificado'; l.atPendente = null; l.alerta = 'Definido na divergência de valor'; });
-      if (alvo && r.decisao === 'informado' && Math.abs(d.dif) > 0.004) extras.push({ tipo: 'ajuste', dentistaId: alvo, valor: d.dif, data: d.data || null, ref: d.atendimento || d.guia, paciente: d.paciente, descricao: 'Ajuste p/ valor informado' });
+      ids.forEach(i => { const l = linhas[i]; l.executorId = alvo; l.origem = alvo ? 'manual' : 'nao_identificado'; l.atPendente = null; l.alerta = 'Definido na divergência de valor'; });
+      if (alvo && r.decisao === 'informado' && Math.abs(d.dif) > 0.004) extras.push({ tipo: 'ajuste', dentistaId: alvo, valor: d.dif, data: d.data || null, key: d.key, ref: d.atendimento || d.guia, paciente: d.paciente, descricao: 'Ajuste p/ valor informado' });
     });
-    linhas.forEach(l => {
-      if (overrides[l.id] !== undefined && l.origem !== 'split') { l.executorId = overrides[l.id] || null; l.origem = l.executorId ? 'manual' : 'nao_identificado'; l.atPendente = null; }
-    });
-    // divisão de guia definida na linha (vale para todas as linhas da guia)
-    linhas.forEach(l => { const sp = splits[l.guia]; if (sp && partesOk(sp.partes) && !l.pend && l.origem !== 'split' && !(l.regra && overrides[l.id] === undefined)) dividirLinha(l, sp.partes, 'Guia dividida'); });
     linhas.forEach(l => { l.comissionavel = !l.pend && inBase(l) && !!l.executorId; });
     const mov = linhas.filter(l => !l.pend);
     const pendentes = linhas.filter(l => l.pendOriginal);
@@ -328,9 +333,9 @@ const Core = (() => {
       if ((it.guia && sysGuias.has(it.guia)) || (it.atend && sysAt.has(it.atend))) return;
       const id = f.name + '|' + it.linha;
       const dec = lancamentos[id] || null;
-      const x = { id, guia: it.guiaRaw || it.guia || '', atend: it.atend || '', paciente: it.paciente || '', procedimento: it.procedimento || '', valor: it.valor, data: it.data || null, informanteId: f.dentistaId, arquivo: f.name, decisao: dec };
+      const x = { id, key: 'x:' + (it.guia || it.atend), guia: it.guiaRaw || it.guia || '', atend: it.atend || '', paciente: it.paciente || '', procedimento: it.procedimento || '', valor: it.valor, data: it.data || null, informanteId: f.dentistaId, arquivo: f.name, decisao: dec };
       naoEncontradas.push(x);
-      if (dec?.dentistaId) extras.push({ tipo: 'lancamento', dentistaId: dec.dentistaId, valor: dec.valor ?? it.valor ?? 0, data: it.data || null, ref: x.guia || x.atend, paciente: x.paciente, descricao: it.procedimento || 'Lançamento não localizado' });
+      if (dec?.dentistaId) extras.push({ tipo: 'lancamento', dentistaId: dec.dentistaId, valor: dec.valor ?? it.valor ?? 0, data: it.data || null, key: 'x:' + (it.guia || it.atend), ref: x.guia || x.atend, paciente: x.paciente, descricao: it.procedimento || 'Lançamento não localizado' });
     }));
 
     // ---- resumo por dentista
@@ -413,7 +418,7 @@ const Core = (() => {
     });
     result.extras.forEach(e => {
       if (e.dentistaId !== dentistaId) return;
-      const k = e.tipo === 'split' && e.guia ? keyGuia(e.guia) : e.tipo === 'lancamento' ? 'x:' + e.ref : sysAt.has(e.ref) ? 'a:' + e.ref : 'g:' + e.ref;
+      const k = e.key || (e.tipo === 'split' && e.guia ? keyGuia(e.guia) : e.tipo === 'lancamento' ? 'x:' + e.ref : sysAt.has(e.ref) ? 'a:' + e.ref : 'g:' + e.ref);
       const o = get(k); o.temSis = true; o.apurado += e.valor; o.procSis.push(e.descricao + (e.tipo === 'ajuste' ? ' (ajuste)' : ''));
       o.paciente = o.paciente || e.paciente;
     });

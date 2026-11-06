@@ -84,6 +84,11 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
 .tag.atendimento{background:var(--okSoft);color:#2b8a63}
 #dmTbl th,#pgLista th{top:0}
 .st-ok{background:var(--okSoft);color:var(--ok)}.st-dif{background:var(--badSoft);color:var(--bad)}.st-so_sistema{background:var(--infoSoft);color:var(--info)}.st-outro,.st-pendente,.st-nao_localizado{background:var(--warnSoft);color:var(--warn)}
+.grow{cursor:pointer}.grow.open td{background:#f3f8f7;border-bottom-color:transparent}
+.gdet>td{background:#f8fbfa;padding:6px 14px 16px!important;white-space:normal!important}
+.gsec{margin:10px 0 6px;font-size:12.5px}.ginf{font-size:12.5px;line-height:1.6}
+.gdiv{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:8px 10px;margin-top:8px;font-size:12.5px;flex-wrap:wrap}
+.t.sub th{position:static;background:transparent;font-size:10.5px}.t.sub td{padding:5px 8px;background:#fff}
 .tag.split{background:#e8f0fb;color:#2f6fb0}
 .tag.dentista{background:var(--okSoft);color:var(--ok)}
 .tag.sistema{background:var(--infoSoft);color:var(--info)}
@@ -164,7 +169,7 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
     <button data-tab="esp">Especialidades</button>
     <button data-tab="hist">Histórico</button>
   </nav>
-  <div class="user" title="versão 2026.11.06-8"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
+  <div class="user" title="versão 2026.11.06-9"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
 </div></header>
 
 <div class="wrap">
@@ -215,7 +220,9 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
 <!-- ================= RESULTADO ================= -->
 <section id="tab-res" class="hide">
   <div class="row" style="margin-top:26px"><div><h1 style="margin:0">Resultado da conciliação</h1><p class="sub" id="resSub" style="margin:4px 0 16px"></p></div><span class="sp"></span>
+    <select class="inp" id="gDent" style="width:230px" title="Filtra todas as tabelas"></select><input class="inp" id="gBusca" placeholder="Buscar atendimento, guia, paciente…" style="width:240px">
     <button class="btn" id="btnExport">⬇ Exportar Excel</button></div>
+  <div id="gInfo" class="muted" style="font-size:12.5px;margin:-8px 0 10px;min-height:4px"></div>
   <div id="resEmpty" class="card empty"><b>Nenhuma conciliação ainda</b>Suba as planilhas na aba Conciliação e clique em "Conciliar".</div>
   <div id="resBody" class="hide">
     <div class="kpis" id="kpis"></div>
@@ -224,27 +231,14 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
       <table class="t" id="tblResumo"></table>
       <p class="muted" style="font-size:12px;margin:10px 0 0">Diárias = dias distintos com atendimento comissionável. Você pode ajustar o número de diárias direto na tabela.</p>
     </div>
-    <div class="card sect">
-      <div class="row" style="margin-bottom:10px"><h3 style="margin:0">Detalhamento das guias</h3><span class="sp"></span><span class="muted" style="font-size:12px">Altere o executor na coluna "Executor" para corrigir manualmente.</span><button class="btn sm ghost hide" id="btnAutoRespUndo"></button><button class="btn sm" id="btnAutoResp" title="Resolve conflitos usando o dentista do Resp. no sistema (quando ele é um dos que informaram a guia)">⚡ Associar pelo Resp. no sistema</button></div>
-      <div class="filters">
-        <div class="seg" id="segOrig"></div>
-        <select class="inp" id="fDent" style="width:220px"></select>
-        <input class="inp" id="fBusca" placeholder="Buscar guia, paciente, procedimento…" style="width:260px">
-      </div>
-      <table class="t" id="tblDet"></table>
-      <div class="pager" id="pager"></div>
-    </div>
-    <div class="card sect hide" id="cardDiv">
-      <div class="row" style="margin-bottom:4px"><h3 style="margin:0">Divergências de valor: informado pelo dentista × sistema</h3><span class="sp"></span><div class="seg" id="segDiv"></div></div>
-      <p class="hint">Comparado por atendimento. Para cada caso, escolha a decisão e para quem vai. <b>Manter sistema</b>: as linhas do sistema daquele atendimento vão para o dentista escolhido. <b>Usar valor informado</b>: idem, mais um ajuste com a diferença, para a comissão ficar pelo valor informado.</p>
-      <div class="row" style="margin-bottom:10px"><div class="chips" id="divResumo"></div><span class="sp"></span>
-        <span class="muted" style="font-size:12px">Pendentes:</span><button class="btn sm" id="bulkSis">Manter sistema em todas</button><button class="btn sm" id="bulkInf">Usar valor informado em todas</button></div>
-      <table class="t" id="tblDiv"></table><div class="pager" id="pagerDiv"></div>
-    </div>
-    <div class="card sect" id="cardNE">
-      <h3 style="margin:0 0 4px">Lançamentos informados pelos dentistas que não constam no sistema</h3>
-      <div class="row"><p class="hint" style="margin:0 0 12px">Nem a guia nem o ID do atendimento foram encontrados (produção não lançada ou guia digitada errada). Atribua a um dentista para entrar na comissão, ou marque "Não considerar".</p><span class="sp"></span><button class="btn sm" id="bulkNE" style="margin-bottom:12px">Atribuir pendentes a quem informou</button></div>
-      <table class="t" id="tblNE"></table>
+    <div class="card sect" id="cardPainel">
+      <div class="row" style="margin-bottom:4px"><h3 style="margin:0">Conferência por atendimento</h3><span class="sp"></span>
+        <button class="btn sm ghost hide" id="btnAutoRespUndo"></button><button class="btn sm" id="btnAutoResp" title="Resolve conflitos usando o dentista do Resp. no sistema (quando ele é um dos que informaram a guia)">⚡ Associar pelo Resp. no sistema</button></div>
+      <p class="hint">Cada linha é um atendimento: as linhas do sistema (com o executor de cada procedimento), o que cada dentista informou e a diferença. Clique para abrir e decidir. Guias pendentes em aberto ficam na aba <b>Guias pendentes</b>.</p>
+      <div class="filters"><div class="seg" id="segPainel"></div><span class="sp"></span>
+        <span class="muted" style="font-size:12px">Diferenças pendentes:</span><button class="btn sm" id="bulkSis">Manter sistema em todas</button><button class="btn sm" id="bulkInf">Usar valor informado em todas</button><button class="btn sm" id="bulkNE" title="Não localizados no sistema">Não localizados → quem informou</button></div>
+      <table class="t" id="tblPainel"></table>
+      <div class="pager" id="pagerPainel"></div>
     </div>
   </div>
 </section>
@@ -323,7 +317,7 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
     <label class="fld"><span>E-mail</span><input class="inp" id="lgEmail" type="email" autocomplete="username" required></label>
     <label class="fld" style="margin-top:10px"><span>Senha</span><input class="inp" id="lgSenha" type="password" autocomplete="current-password" required></label>
     <button class="btn pri" style="width:100%;justify-content:center;margin-top:16px" id="lgBtn">Entrar</button>
-    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.06-8</p>
+    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.06-9</p>
     <p class="muted" id="lgMsg" style="font-size:12.5px;min-height:18px;margin:10px 0 0"></p>
     <div class="lg-links"><a href="#" id="lnkAcesso">Solicitar acesso</a><span>·</span><a href="#" id="lnkSenha">Esqueci minha senha</a></div>
   </form>
@@ -373,8 +367,8 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
 
 <script src="js/vendor/xlsx.full.min.js"></script>
 <script src="js/vendor/supabase.js"></script>
-<script src="js/config.js?v=2026.11.06-8"></script>
-<script src="js/core.js?v=2026.11.06-8"></script>
-<script src="js/app.js?v=2026.11.06-8"></script>
+<script src="js/config.js?v=2026.11.06-9"></script>
+<script src="js/core.js?v=2026.11.06-9"></script>
+<script src="js/app.js?v=2026.11.06-9"></script>
 </body>
 </html>

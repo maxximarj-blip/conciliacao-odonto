@@ -119,6 +119,11 @@ Comissão: **percentual** sobre a base (situações marcadas), **diária fixa** 
 
 ---
 
+## Conferência por atendimento (Resultado)
+Painel único: cada linha é um atendimento com as linhas do sistema (executor de cada procedimento), o que cada dentista informou e a diferença. Clique para abrir e decidir (executor da linha, dividir guia, decisão da diferença, não localizados). A situação de cada atendimento pode ser: Conflito, Diferença, Sem executor, Não localizado, Conciliado, Só no sistema ou Pendente. O filtro **"⚠ Precisa de ação"** mostra o que falta decidir.
+
+O **filtro de dentista** e a **busca** no topo do Resultado valem para todas as tabelas: comissão, painel e guias pendentes.
+
 ## Conferência por dentista e envio para pagamento
 - Em **Resultado → Comissão por dentista**, clique no nome do dentista para abrir a conferência: o que ele informou na planilha × o que foi apurado no sistema, por atendimento, com a situação de cada um (Conciliado, Diferença, Só no sistema, Outro executor, Pendente, Não localizado).
 - **💸 Enviado para pagamento:** escolha a data e os dentistas. Todas as transações deles na competência ficam marcadas com a data de pagamento (coluna **Pgto**, detalhamento e Excel). O último envio pode ser desfeito. Se entrarem linhas novas depois do envio, a data aparece com * até um novo envio.
