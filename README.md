@@ -25,7 +25,6 @@ window.APP_CONFIG = {
   supabaseUrl: 'https://xxxxxxxx.supabase.co',
   supabaseAnonKey: 'eyJhbGciOi...',
   clinica: 'Odonto Premier',
-  emailSolicitacoes: 'maxximarj@gmail.com',
 };
 ```
 
@@ -56,14 +55,28 @@ Na tela de login há duas opções:
 - **Solicitar acesso:** a pessoa informa nome, e-mail e função.
 - **Esqueci minha senha:** a pessoa informa o e-mail.
 
-Cada pedido fica gravado na tabela `solicitacoes` e envia um aviso para o e-mail definido em `emailSolicitacoes` no `js/config.js`. O envio usa o serviço gratuito FormSubmit.
-- **Primeira vez:** o FormSubmit manda um e-mail de **ativação** para esse endereço. Clique em *Activate Form* uma única vez, senão os avisos não chegam.
-- **Limite:** no máximo 3 pedidos por e-mail a cada 24h.
+Cada pedido fica gravado na tabela `solicitacoes`. O aviso por e-mail é enviado pelo próprio Supabase (Edge Function + Resend). Veja **Aviso por e-mail** abaixo. Limite: 3 pedidos por e-mail a cada 24h.
 
 O admin vê os pedidos no botão **Solicitações** (no topo do sistema):
 - **Acesso:** o painel mostra os dados e uma senha gerada. Crie o usuário no Supabase (**Authentication → Users → Add user**) e use **Copiar mensagem p/ enviar** para avisar a pessoa.
 - **Senha:** o painel já traz o SQL de redefinição pronto. Rode no **SQL Editor** e envie a mensagem.
 - Depois, marque o pedido como **atendido** ou **recusado**. Isso fica na auditoria.
+
+### Aviso por e-mail (Resend + Supabase), configurar uma vez
+1. Crie uma conta grátis em **resend.com** usando o e-mail que vai **receber** os avisos (ex.: maxximarj@gmail.com). No plano grátis, sem domínio próprio, o Resend só envia para o e-mail da própria conta.
+2. No Resend: **API Keys → Create API Key** (permissão *Sending access*) e copie a chave `re_...`.
+3. No Supabase: **Edge Functions → Deploy a new function → Via Editor**, nome `notificar-solicitacao`. Cole o conteúdo de `supabase/functions/notificar-solicitacao/index.ts` e clique em **Deploy**.
+4. No Supabase: **Edge Functions → Secrets**, adicione:
+   - `RESEND_API_KEY` = a chave `re_...`
+   - `EMAIL_DESTINO` = maxximarj@gmail.com
+   - `SITE_URL` = endereço do site no GitHub Pages (opcional)
+5. No Supabase: **Database → Webhooks → Create a new hook** (se pedir, clique em *Enable webhooks* antes):
+   - Name: `aviso_solicitacao`
+   - Table: `solicitacoes` · Events: **Insert**
+   - Type: **Supabase Edge Functions** → `notificar-solicitacao` · Method **POST**
+   - Em HTTP Headers, aceite o *Authorization* que o Supabase sugere (service role)
+   - **Create webhook**
+6. Teste com um "Esqueci minha senha" na tela de login. Se o e-mail não chegar, veja os logs em **Edge Functions → notificar-solicitacao → Logs**.
 
 Para tornar alguém admin, rode no SQL Editor:
 ```sql

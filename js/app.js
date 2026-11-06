@@ -104,16 +104,6 @@ function abrirReq(tipo) {
 $('#lnkAcesso').onclick = e => { e.preventDefault(); abrirReq('acesso'); };
 $('#lnkSenha').onclick = e => { e.preventDefault(); abrirReq('senha'); };
 $('#lnkVoltar').onclick = e => { e.preventDefault(); $('#reqForm').classList.add('hide'); $('#loginForm').classList.remove('hide'); };
-async function notificarEmail(dados) {
-  const destino = CFG.emailSolicitacoes; if (!destino) return;
-  try {
-    await fetch('https://formsubmit.co/ajax/' + encodeURIComponent(destino), {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ _subject: `[Conciliação Odonto] ${dados.tipo === 'acesso' ? 'Solicitação de acesso' : 'Redefinição de senha'} — ${dados.email}`, _template: 'table', _captcha: 'false',
-        Tipo: dados.tipo === 'acesso' ? 'Solicitar acesso' : 'Esqueci minha senha', Nome: dados.nome || '—', email: dados.email, Mensagem: dados.mensagem || '—', Sistema: location.href.split('#')[0] }),
-    });
-  } catch (e) { console.warn('Aviso por e-mail não enviado', e); }
-}
 $('#reqForm').onsubmit = async e => {
   e.preventDefault();
   const out = $('#reqOut');
@@ -122,7 +112,6 @@ $('#reqForm').onsubmit = async e => {
   $('#reqBtn').disabled = true; out.style.color = 'var(--ink2)'; out.textContent = 'Enviando…';
   const { error } = await sb.from('solicitacoes').insert(dados);
   if (error) { $('#reqBtn').disabled = false; out.style.color = 'var(--bad)'; out.textContent = /Muitas/.test(error.message) ? error.message : /check constraint|email/i.test(error.message) ? 'Confira o e-mail digitado.' : 'Não foi possível enviar agora. Tente novamente.'; return; }
-  await notificarEmail(dados);
   out.style.color = 'var(--ok)'; out.textContent = '✓ Solicitação enviada! Você receberá o retorno por e-mail.';
   $('#reqNome').value = ''; $('#reqMsg').value = '';
 };
