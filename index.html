@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conciliação de Produção Odontológica</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f3f6f5; --panel:#ffffff; --ink:#0f2a2e; --ink2:#46615f; --muted:#86a09d; --line:#dfe8e6; --line2:#eef3f2;
+  --brand:#0e6b63; --brand2:#0b544e; --brandSoft:#e3f2ef; --accent:#e8a33d;
+  --ok:#1f8a5b; --okSoft:#e4f4ec; --warn:#b7791f; --warnSoft:#fbf1df; --bad:#c2453a; --badSoft:#fbe7e5; --info:#2f6fb0; --infoSoft:#e6eff9;
+  --r:12px; --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Manrope,system-ui,sans-serif;font-size:14px;-webkit-font-smoothing:antialiased}
+body{overflow-x:hidden}
+button,input,select{font:inherit;color:inherit}
+.wrap{max-width:1320px;margin:0 auto;padding:0 20px 60px}
+header.top{background:var(--ink);color:#fff;position:sticky;top:0;z-index:20}
+header .bar{max-width:1320px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.01em}
+.logo .mk{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#19a596,#0e6b63);display:grid;place-items:center}
+.logo small{display:block;font-weight:500;color:#9fc3bd;font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+nav.tabs{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+nav.tabs button{background:transparent;border:0;color:#bfd6d2;padding:8px 14px;border-radius:9px;cursor:pointer;font-weight:600}
+nav.tabs button:hover{background:rgba(255,255,255,.07);color:#fff}
+nav.tabs button.on{background:#fff;color:var(--ink)}
+nav.tabs .cnt{display:inline-block;min-width:18px;padding:0 5px;margin-left:6px;border-radius:9px;background:var(--accent);color:var(--ink);font-size:11px;line-height:18px;text-align:center}
+.save{font-size:11px;color:#9fc3bd;white-space:nowrap}
+h1{font-size:22px;letter-spacing:-.02em;margin:26px 0 4px}
+.sub{color:var(--ink2);margin:0 0 18px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:18px;min-width:0}
+.card h2{font-size:15px;margin:0 0 2px;display:flex;align-items:center;gap:8px}
+.card h2 .n{width:22px;height:22px;border-radius:50%;background:var(--brandSoft);color:var(--brand);display:grid;place-items:center;font-size:12px}
+.card .hint{color:var(--muted);font-size:12.5px;margin:0 0 14px}
+.drop{display:block;border:1.5px dashed #b9cfcb;border-radius:10px;padding:22px;text-align:center;cursor:pointer;background:#fafcfc;transition:.15s}
+.drop:hover,.drop.over{border-color:var(--brand);background:var(--brandSoft)}
+.drop b{color:var(--brand)}
+.drop .ic{font-size:22px;margin-bottom:4px;color:var(--brand)}
+.drop input{display:none}
+.btn{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);background:#fff;padding:8px 14px;border-radius:9px;cursor:pointer;font-weight:600;white-space:nowrap}
+.btn:hover{border-color:#bcd0cc}
+.btn.pri{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.pri:hover{background:var(--brand2)}
+.btn.pri:disabled{background:#9bbdb8;border-color:#9bbdb8;cursor:not-allowed}
+.btn.sm{padding:5px 10px;font-size:12.5px}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--ink2)}
+.btn.ghost:hover{background:var(--line2)}
+.btn.danger{color:var(--bad)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.sp{flex:1}
+.meta{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,.8fr) minmax(0,1.2fr) minmax(0,1.6fr);gap:10px;margin-top:14px}
+.meta div{background:var(--line2);border-radius:9px;padding:9px 11px;min-width:0}
+.meta span{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.meta b{font-family:var(--mono);font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:20px;background:var(--line2);font-size:12px;color:var(--ink2);border:1px solid transparent}
+.chip.ok{background:var(--okSoft);color:var(--ok)}
+.chip.miss{background:var(--badSoft);color:var(--bad)}
+label.chk{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid var(--line);border-radius:20px;cursor:pointer;font-size:13px;user-select:none}
+label.chk:has(input:checked){background:var(--brandSoft);border-color:#9fd0c7;color:var(--brand2);font-weight:600}
+label.chk input{accent-color:var(--brand)}
+.fld{display:flex;flex-direction:column;gap:4px;min-width:0}
+.fld>span{font-size:11.5px;color:var(--ink2);font-weight:600}
+.inp,select.inp{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff;min-width:0}
+.inp:focus{outline:2px solid #9fd0c7;border-color:var(--brand)}
+details.map{margin-top:12px}
+details.map summary{cursor:pointer;color:var(--brand);font-weight:600;font-size:12.5px}
+.mapgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:10px}
+/* tabelas sem rolagem lateral */
+table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
+.t th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left;padding:8px 8px;border-bottom:1px solid var(--line);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#fff;position:sticky;top:56px}
+.t td{padding:8px 8px;border-bottom:1px solid var(--line2);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.t tr:hover td{background:#f8fbfa}
+.t .num{text-align:right;font-family:var(--mono);font-size:12.5px}
+.t td.wrap{white-space:normal;line-height:1.3}
+.t tfoot td{font-weight:700;border-top:1.5px solid var(--ink);border-bottom:0;background:#fbfdfc}
+.t select.inp,.t input.inp{padding:5px 7px;font-size:12.5px}
+.tag{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;white-space:nowrap}
+.tag.atendimento{background:var(--okSoft);color:#2b8a63}
+.tag.dentista{background:var(--okSoft);color:var(--ok)}
+.tag.sistema{background:var(--infoSoft);color:var(--info)}
+.tag.manual{background:#efe8fb;color:#6b46c1}
+.tag.nao_identificado{background:var(--badSoft);color:var(--bad)}
+.tag.conflito{background:var(--warnSoft);color:var(--warn)}
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:16px}
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;min-width:0}
+.kpi span{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700}
+.kpi b{display:block;font-size:20px;font-family:var(--mono);font-weight:600;margin-top:6px;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi small{color:var(--ink2);font-size:12px}
+.kpi.hl{background:var(--ink);border-color:var(--ink);color:#fff}
+.kpi.hl span{color:#9fc3bd}.kpi.hl small{color:#bfd6d2}
+.kpi.bad b{color:var(--bad)}
+.bar2{height:6px;border-radius:4px;background:var(--line2);overflow:hidden;margin-top:8px;display:flex}
+.bar2 i{display:block;height:100%}
+.empty{text-align:center;color:var(--muted);padding:40px 10px}
+.empty b{display:block;color:var(--ink);font-size:15px;margin-bottom:4px}
+.pager{display:flex;align-items:center;gap:8px;justify-content:flex-end;margin-top:10px;color:var(--ink2);font-size:12.5px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.seg{display:inline-flex;background:var(--line2);border-radius:9px;padding:3px;flex-wrap:wrap}
+.seg button{border:0;background:transparent;padding:5px 10px;border-radius:7px;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--ink2)}
+.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.seg button em{font-style:normal;color:var(--muted);margin-left:4px;font-family:var(--mono);font-size:11px}
+.formgrid{display:grid;grid-template-columns:2fr 2fr 1.3fr 1.3fr 1fr auto;gap:10px;align-items:end}
+@media(max-width:1000px){.formgrid{grid-template-columns:1fr 1fr}}
+.rules{margin:2px 0 0;padding-left:18px;color:var(--ink2);font-size:12.5px;line-height:1.55}
+.t td.two{white-space:normal;line-height:1.25}
+.t td.two small{display:block;color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.t td.two .l{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st{font-size:11px;font-weight:700}
+.notice{border-radius:10px;padding:10px 12px;font-size:13px;margin-top:12px}
+.notice.warn{background:var(--warnSoft);color:#7a4f0f}
+.notice.info{background:var(--infoSoft);color:#1f4d7d}
+.notice.ok{background:var(--okSoft);color:#14603f}
+.sect{margin-top:18px}
+.sect h3{font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.muted{color:var(--muted)}
+.mono{font-family:var(--mono)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;font-weight:600;transition:.25s;z-index:99;max-width:90vw}
+.toast.on{transform:translateX(-50%) translateY(0)}
+.modal-bg{position:fixed;inset:0;background:rgba(15,42,46,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+.modal-bg.on{display:flex}
+.modal{background:#fff;border-radius:14px;padding:20px;width:min(480px,100%)}
+.modal h3{margin:0 0 6px}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.hide{display:none!important}
+.user{display:flex;align-items:center;gap:10px;font-size:12px;color:#bfd6d2}
+.user b{color:#fff;font-weight:600}
+.compbar{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-top:22px;padding:14px 18px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:20px;font-size:12px;font-weight:700}
+.pill.rasc{background:var(--warnSoft);color:var(--warn)}.pill.fech{background:var(--okSoft);color:var(--ok)}.pill.novo{background:var(--line2);color:var(--ink2)}
+.ro .drop{pointer-events:none;opacity:.5}
+.login-bg{position:fixed;inset:0;background:linear-gradient(160deg,#0f2a2e,#0e4d47);display:flex;align-items:center;justify-content:center;z-index:80;padding:20px}
+.login{background:#fff;border-radius:16px;padding:28px;width:min(380px,100%);box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.loading{opacity:.6;pointer-events:none}
+</style>
+</head>
+<body>
+<header class="top"><div class="bar">
+  <div class="logo"><div class="mk"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3c-2.5 0-4 2-4 4.5 0 3 1.5 5 2 8 .4 2.5 1 5.5 2.5 5.5S9 18 10 15.5c.6-1.5 1.4-1.5 2-1.5s1.4 0 2 1.5c1 2.5 1 5.5 2.5 5.5S18.6 18 19 15.5c.5-3 2-5 2-8C21 5 19.5 3 17 3c-2 0-3 1-5 1S9 3 7 3z"/></svg></div>
+    <div>Conciliação de Produção<small>Odontológica · comissões</small></div></div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="conc" class="on">Conciliação</button>
+    <button data-tab="res">Resultado</button>
+    <button data-tab="dent">Dentistas <span class="cnt" id="cntDent">0</span></button>
+    <button data-tab="esp">Especialidades</button>
+    <button data-tab="hist">Histórico</button>
+  </nav>
+  <div class="user"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
+</div></header>
+
+<div class="wrap">
+
+<!-- ================= CONCILIAÇÃO ================= -->
+<section id="tab-conc">
+  <div class="compbar card" id="compBar">
+    <label class="fld" style="width:190px"><span>Competência</span><input class="inp" type="month" id="compMes"></label>
+    <div id="compStatus" class="row" style="gap:8px"></div>
+    <span class="sp"></span>
+    <button class="btn" id="btnVersao" title="Grava uma foto da conciliação no histórico">Salvar versão</button>
+    <button class="btn pri" id="btnFechar">Fechar competência</button>
+    <button class="btn hide" id="btnReabrir">Reabrir</button>
+  </div>
+  <div id="roBanner" class="notice info hide"></div>
+  <h1>Conciliação do mês</h1>
+  <p class="sub">Suba a produção gerada pelo sistema e as planilhas informadas por cada dentista. Tudo fica gravado na competência: arquivos originais, decisões e versões.</p>
+  <div class="grid2">
+    <div class="card">
+      <h2><span class="n">1</span>Produção do sistema</h2>
+      <p class="hint">Planilha geral (ex.: "Faturamento Odonto Premier – Outubro"). A aba e as colunas são detectadas automaticamente.</p>
+      <label class="drop" id="dropSys"><div class="ic">⬆</div><b>Clique ou arraste</b> a planilha do sistema<br><span class="muted">.xlsx, .xls ou .csv</span><input type="file" id="fileSys" accept=".xlsx,.xls,.csv"></label>
+      <div id="sysInfo"></div>
+    </div>
+    <div class="card">
+      <h2><span class="n">2</span>Produções informadas pelos dentistas</h2>
+      <p class="hint">Suba várias de uma vez. O sistema acha a coluna de guias sozinho e sugere o dentista pelo nome do arquivo.</p>
+      <label class="drop" id="dropDen"><div class="ic">⬆</div><b>Clique ou arraste</b> as planilhas dos dentistas<br><span class="muted">pode selecionar vários arquivos</span><input type="file" id="fileDen" accept=".xlsx,.xls,.csv" multiple></label>
+      <div id="denList"></div>
+    </div>
+  </div>
+  <div class="card sect">
+    <h2><span class="n">3</span>Regras do cálculo</h2>
+    <p class="hint">Defina o que entra na base de comissão e como tratar guias com mais de um dentista.</p>
+    <div class="row" style="align-items:flex-start;gap:28px">
+      <div class="fld" style="flex:1;min-width:260px"><span>Situações que entram na base de comissão</span><div class="chips" id="sitBox"><span class="muted">Carregue a planilha do sistema.</span></div></div>
+      <div class="fld" style="flex:1.3;min-width:300px"><span>Como o executor é definido</span>
+        <ol class="rules"><li>Guia informada por um dentista → <b>ele é o executor</b>, mesmo que o sistema aponte outro.</li>
+        <li>Guia informada por mais de um dentista → <b>conflito</b>, você escolhe.</li>
+        <li>Sem guia válida, só com o ID do atendimento → atribui se o valor bater; senão vai para <b>divergência</b>.</li>
+        <li>Sem planilha de dentista → usa o dentista do sistema, se estiver cadastrado.</li></ol></div>
+      <div class="fld" style="width:200px"><span>Tolerância de divergência (R$)</span><input class="inp num" id="tolDiv" type="number" min="0" step="0.5" value="1" style="text-align:right"><span class="muted" style="font-weight:400;font-size:11.5px">Diferenças até esse valor não viram divergência.</span></div>
+    </div>
+    <div class="row" style="margin-top:16px"><span class="muted" id="readyMsg"></span><span class="sp"></span><button class="btn pri" id="btnRun" disabled>Conciliar e calcular comissões →</button></div>
+  </div>
+</section>
+
+<!-- ================= RESULTADO ================= -->
+<section id="tab-res" class="hide">
+  <div class="row" style="margin-top:26px"><div><h1 style="margin:0">Resultado da conciliação</h1><p class="sub" id="resSub" style="margin:4px 0 16px"></p></div><span class="sp"></span>
+    <button class="btn" id="btnExport">⬇ Exportar Excel</button></div>
+  <div id="resEmpty" class="card empty"><b>Nenhuma conciliação ainda</b>Suba as planilhas na aba Conciliação e clique em "Conciliar".</div>
+  <div id="resBody" class="hide">
+    <div class="kpis" id="kpis"></div>
+    <div class="card">
+      <h3 style="margin:0 0 10px">Comissão por dentista</h3>
+      <table class="t" id="tblResumo"></table>
+      <p class="muted" style="font-size:12px;margin:10px 0 0">Diárias = dias distintos com atendimento comissionável. Você pode ajustar o número de diárias direto na tabela.</p>
+    </div>
+    <div class="card sect">
+      <div class="row" style="margin-bottom:10px"><h3 style="margin:0">Detalhamento das guias</h3><span class="sp"></span><span class="muted" style="font-size:12px">Altere o executor na coluna "Executor" para corrigir manualmente.</span></div>
+      <div class="filters">
+        <div class="seg" id="segOrig"></div>
+        <select class="inp" id="fDent" style="width:220px"></select>
+        <input class="inp" id="fBusca" placeholder="Buscar guia, paciente, procedimento…" style="width:260px">
+      </div>
+      <table class="t" id="tblDet"></table>
+      <div class="pager" id="pager"></div>
+    </div>
+    <div class="card sect hide" id="cardDiv">
+      <div class="row" style="margin-bottom:4px"><h3 style="margin:0">Divergências de valor: informado pelo dentista × sistema</h3><span class="sp"></span><div class="seg" id="segDiv"></div></div>
+      <p class="hint">Comparado por atendimento. Para cada caso, escolha a decisão e para quem vai. <b>Manter sistema</b>: as linhas do sistema daquele atendimento vão para o dentista escolhido. <b>Usar valor informado</b>: idem, mais um ajuste com a diferença, para a comissão ficar pelo valor informado.</p>
+      <div class="row" style="margin-bottom:10px"><div class="chips" id="divResumo"></div><span class="sp"></span>
+        <span class="muted" style="font-size:12px">Pendentes:</span><button class="btn sm" id="bulkSis">Manter sistema em todas</button><button class="btn sm" id="bulkInf">Usar valor informado em todas</button></div>
+      <table class="t" id="tblDiv"></table><div class="pager" id="pagerDiv"></div>
+    </div>
+    <div class="card sect" id="cardNE">
+      <h3 style="margin:0 0 4px">Lançamentos informados pelos dentistas que não constam no sistema</h3>
+      <div class="row"><p class="hint" style="margin:0 0 12px">Nem a guia nem o ID do atendimento foram encontrados (produção não lançada ou guia digitada errada). Atribua a um dentista para entrar na comissão, ou marque "Não considerar".</p><span class="sp"></span><button class="btn sm" id="bulkNE" style="margin-bottom:12px">Atribuir pendentes a quem informou</button></div>
+      <table class="t" id="tblNE"></table>
+    </div>
+  </div>
+</section>
+
+<!-- ================= DENTISTAS ================= -->
+<section id="tab-dent" class="hide">
+  <h1>Cadastro de dentistas</h1>
+  <p class="sub">Especialidade e forma de remuneração de cada profissional. "Nomes no sistema" ajuda a reconhecer o dentista quando o nome vem escrito diferente na planilha.</p>
+  <div class="card">
+    <div class="formgrid" id="dForm">
+      <label class="fld"><span>Nome do dentista *</span><input class="inp" id="dNome" placeholder="Ex.: Dra Larissa Mamede"></label>
+      <label class="fld"><span>Nomes no sistema (separe por ;)</span><input class="inp" id="dAlias" placeholder="Ex.: Dra. Larissa; Larissa Mamede"></label>
+      <label class="fld"><span>Especialidade</span><select class="inp" id="dEsp"></select></label>
+      <label class="fld"><span>Forma de remuneração</span><select class="inp" id="dForma"><option value="">Padrão da especialidade</option><option value="percentual">Percentual (%)</option><option value="diaria">Diária fixa (R$/dia)</option><option value="fixo">Valor fixo mensal (R$)</option></select></label>
+      <label class="fld"><span id="dValLbl">Valor / %</span><input class="inp" id="dValor" type="number" step="0.01" min="0" placeholder="padrão"></label>
+      <div class="row" style="gap:6px"><button class="btn pri" id="dSave">Adicionar</button><button class="btn ghost hide" id="dCancel">Cancelar</button></div>
+    </div>
+  </div>
+  <div class="card sect" id="sugCard"></div>
+  <div class="card sect"><table class="t" id="tblDent"></table></div>
+  <div class="row sect"><label class="chk"><input type="checkbox" id="showInativos"> Mostrar inativos</label><span class="muted" style="font-size:12px">Dentistas não são apagados: ficam inativos para manter o histórico.</span></div>
+</section>
+
+<!-- ================= ESPECIALIDADES ================= -->
+<section id="tab-esp" class="hide">
+  <h1>Tabela de especialidades</h1>
+  <p class="sub">Regra padrão de comissão de cada especialidade. O cadastro do dentista pode sobrescrever.</p>
+  <div class="card"><table class="t" id="tblEsp"></table>
+  <div class="row" style="margin-top:12px"><button class="btn" id="eAdd">+ Nova especialidade</button></div></div>
+</section>
+<!-- ================= HISTÓRICO ================= -->
+<section id="tab-hist" class="hide">
+  <h1>Histórico</h1>
+  <p class="sub">Todas as competências, versões gravadas e comissões fechadas. Nada é apagado.</p>
+  <div class="card"><h3 style="margin:0 0 10px">Competências</h3><table class="t" id="tblConc"></table></div>
+  <div class="card sect hide" id="cardVers"><div class="row" style="margin-bottom:10px"><h3 style="margin:0" id="versTitle">Versões</h3></div><table class="t" id="tblVers"></table></div>
+  <div class="card sect"><div class="row" style="margin-bottom:10px"><h3 style="margin:0">Comissões fechadas por dentista</h3><span class="sp"></span><span class="muted" style="font-size:12px">Últimas 6 competências fechadas (versão vigente)</span></div><table class="t" id="tblPivot"></table></div>
+  <div class="card sect"><div class="row" style="margin-bottom:10px"><h3 style="margin:0">Auditoria</h3><span class="sp"></span>
+    <div class="seg" id="segAud"><button class="on" data-a="">Tudo</button><button data-a="conciliacoes">Conciliações</button><button data-a="conciliacao_arquivos">Arquivos</button><button data-a="dentistas">Dentistas</button><button data-a="especialidades">Especialidades</button></div></div>
+    <table class="t" id="tblAud"></table></div>
+</section>
+</div>
+
+<!-- ================= LOGIN ================= -->
+<div class="login-bg hide" id="login">
+  <form class="login" id="loginForm">
+    <div class="logo" style="color:var(--ink);margin-bottom:18px"><div class="mk"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3c-2.5 0-4 2-4 4.5 0 3 1.5 5 2 8 .4 2.5 1 5.5 2.5 5.5S9 18 10 15.5c.6-1.5 1.4-1.5 2-1.5s1.4 0 2 1.5c1 2.5 1 5.5 2.5 5.5S18.6 18 19 15.5c.5-3 2-5 2-8C21 5 19.5 3 17 3c-2 0-3 1-5 1S9 3 7 3z"/></svg></div>
+      <div>Conciliação de Produção<small style="color:var(--muted)" id="loginClinica">Odontológica · comissões</small></div></div>
+    <label class="fld"><span>E-mail</span><input class="inp" id="lgEmail" type="email" autocomplete="username" required></label>
+    <label class="fld" style="margin-top:10px"><span>Senha</span><input class="inp" id="lgSenha" type="password" autocomplete="current-password" required></label>
+    <button class="btn pri" style="width:100%;justify-content:center;margin-top:16px" id="lgBtn">Entrar</button>
+    <p class="muted" id="lgMsg" style="font-size:12.5px;min-height:18px;margin:10px 0 0"></p>
+  </form>
+</div>
+
+<div class="modal-bg" id="modal"><div class="modal"><h3 id="mTitle"></h3><p id="mText" class="muted" style="margin:0 0 12px;white-space:pre-line"></p><textarea class="inp hide" id="mInput" rows="3" style="resize:vertical;margin-bottom:14px"></textarea><div class="row"><span class="sp"></span><button class="btn ghost" id="mNo">Cancelar</button><button class="btn pri" id="mYes">Confirmar</button></div></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="js/vendor/xlsx.full.min.js"></script>
+<script src="js/vendor/supabase.js"></script>
+<script src="js/config.js"></script>
+<script src="js/core.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
