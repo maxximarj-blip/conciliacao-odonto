@@ -195,7 +195,7 @@ async function cadChanged() {
 $('#compMes').onchange = () => { if ($('#compMes').value) abrirCompetencia($('#compMes').value); };
 function resetEstado() {
   S.sys = null; S.denFiles = []; S.situacoes = []; S.sitBase = new Set();
-  S.overrides = {}; S.overridesAuto = {}; S.aprovadas = {}; S.pagamentos = []; S.decAtend = {}; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
+  S.overrides = {}; S.overridesAuto = {}; S.aprovadas = {}; S.pagamentos = []; S.decAtend = {}; S.decGuia = {}; S.decGuiaAuto = {}; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
   S.view = { orig: 'todas', dent: '', q: '', page: 0 }; S.divView = { f: 'pend', page: 0 };
   $('#tolDiv').value = 1;
 }
@@ -209,7 +209,7 @@ async function abrirCompetencia(mes) {
     S.conc = c || { competencia: comp, novo: true };
     if (c) {
       const regras = c.regras || {}, dec = c.decisoes || {};
-      S.overrides = dec.overrides || {}; S.diarias = dec.diarias || {}; S.resolucoes = dec.resolucoes || {}; S.lancamentos = dec.lancamentos || {}; S.splits = dec.splits || {}; S.overridesAuto = dec.overridesAuto || {}; S.aprovadas = dec.aprovadas || {}; S.pagamentos = dec.pagamentos || []; S.decAtend = dec.decAtend || {};
+      S.overrides = dec.overrides || {}; S.diarias = dec.diarias || {}; S.resolucoes = dec.resolucoes || {}; S.lancamentos = dec.lancamentos || {}; S.splits = dec.splits || {}; S.overridesAuto = dec.overridesAuto || {}; S.aprovadas = dec.aprovadas || {}; S.pagamentos = dec.pagamentos || []; S.decAtend = dec.decAtend || {}; S.decGuia = dec.decGuia || {}; S.decGuiaAuto = dec.decGuiaAuto || {};
       if (regras.tolDiv != null) $('#tolDiv').value = regras.tolDiv;
       const arqs = await q(sb.from('conciliacao_arquivos').select('*').eq('conciliacao_id', c.id).eq('ativo', true).order('enviado_em'), 'Arquivos');
       const sysA = arqs.filter(a => a.tipo === 'sistema').pop();
@@ -246,7 +246,7 @@ async function enviarArquivo(file, tipo, dentistaId) {
   return q(sb.from('conciliacao_arquivos').insert({ conciliacao_id: c.id, tipo, nome: file.name, dentista_id: dentistaId || null, storage_path: path, tamanho: file.size }).select().single(), 'Registrar arquivo');
 }
 const regrasAtuais = () => ({ sitBase: [...S.sitBase], tolDiv: Math.max(0, +$('#tolDiv').value || 0) });
-const decisoesAtuais = () => ({ overrides: S.overrides, diarias: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, overridesAuto: S.overridesAuto, aprovadas: S.aprovadas, pagamentos: S.pagamentos, decAtend: S.decAtend });
+const decisoesAtuais = () => ({ overrides: S.overrides, diarias: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, overridesAuto: S.overridesAuto, aprovadas: S.aprovadas, pagamentos: S.pagamentos, decAtend: S.decAtend, decGuia: S.decGuia, decGuiaAuto: S.decGuiaAuto });
 const totaisAtuais = () => {
   if (!S.result) return {};
   const T = S.result.tot;
@@ -330,7 +330,7 @@ setupDrop($('#dropSys'), $('#fileSys'), async files => {
     const antigo = S.sys?.arquivoId;
     const arq = await enviarArquivo(f, 'sistema');
     if (antigo) await q(sb.from('conciliacao_arquivos').update({ ativo: false }).eq('id', antigo), 'Arquivo anterior');
-    S.overrides = {}; S.overridesAuto = {}; S.aprovadas = {}; S.pagamentos = []; S.decAtend = {}; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
+    S.overrides = {}; S.overridesAuto = {}; S.aprovadas = {}; S.pagamentos = []; S.decAtend = {}; S.decGuia = {}; S.decGuiaAuto = {}; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
     montarSistema(f.name, sheets, arq.id, null);
     S.denFiles.forEach(df => analyzeDen(df, false));
     renderAllConc(); run(false); salvar();
@@ -462,7 +462,7 @@ function run(go) {
   if (!S.sys) return;
   S.result = Core.reconcile({
     systemRows: S.sys.rows, dentistFiles: S.denFiles.filter(f => f.dentistaId), dentistas: S.cad.dentistas, especialidades: S.cad.especialidades,
-    situacoesBase: [...S.sitBase], overrides: S.overrides, diariasOverride: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, regrasProc: S.cad.regras.filter(r => r.ativo && dentById(r.dentistaId)?.ativo), aprovadas: S.aprovadas, decAtend: S.decAtend, tolDiv: Math.max(0, +$('#tolDiv').value || 0),
+    situacoesBase: [...S.sitBase], overrides: S.overrides, diariasOverride: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, regrasProc: S.cad.regras.filter(r => r.ativo && dentById(r.dentistaId)?.ativo), aprovadas: S.aprovadas, decAtend: { ...S.decAtend, ...decisoesGuiaParaMotor() }, tolDiv: Math.max(0, +$('#tolDiv').value || 0),
   });
   renderResult(); renderCompBar();
   if (go) { S.view.page = 0; showTab('res'); }
@@ -483,8 +483,8 @@ function renderResult() {
       <div class="bar2"><i style="width:${w(T.viaDentista)};background:var(--ok)"></i><i style="width:${w(T.viaSistema)};background:var(--info)"></i><i style="width:${w(T.manual)};background:#6b46c1"></i><i style="width:${w(T.conflitos)};background:var(--warn)"></i></div></div>
     <div class="kpi ${T.naoIdent + T.conflitos ? 'bad' : ''}"><span>Sem executor</span><b>${brl(T.naoIdentValor)}</b><small>${n0(T.naoIdent)} linhas · ${n0(T.conflitos)} conflitos</small></div>
     <div class="kpi ${T.pendencias ? 'bad' : ''}" style="cursor:pointer" id="kpiPend"><span>Pendências p/ decidir</span><b>${n0(T.pendencias)}</b><small>${n0(T.divPend)} diverg. · ${n0(T.neAbertos)} não localiz. · ${n0(T.conflitos)} confl.</small></div>`;
-  renderFiltroGlobal(); renderResumo(); renderPainel(); renderPend(); renderAutoResp();
-  $('#kpiPend').onclick = () => { S.painel.f = 'atencao'; S.painel.page = 0; renderPainel(); $('#cardPainel').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  renderFiltroGlobal(); renderResumo(); renderPainel(); renderPend();
+  $('#kpiPend').onclick = () => { S.painel.f = 'pend'; S.painel.page = 0; renderPainel(); $('#cardPainel').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   applyRO();
 }
 function renderResumo() {
@@ -591,117 +591,108 @@ $('#pgOk').onclick = () => {
 
 const ORIG = [['todas', 'Todas'], ['dentista', 'Via guia'], ['atendimento', 'Via atendimento'], ['sistema', 'Via sistema'], ['manual', 'Manual'], ['nao_identificado', 'Sem executor'], ['conflito', 'Conflito'], ['split', 'Dividida'], ['regra', 'Por regra'], ['aprovada', 'Pendência aprovada'], ['alerta', 'Com alerta']];
 const ORIG_LBL = { dentista: 'Dentista (guia)', atendimento: 'Dentista (atendimento)', sistema: 'Sistema', manual: 'Manual', nao_identificado: 'Sem executor', conflito: 'Conflito', split: 'Dividida entre dentistas', regra: 'Regra por procedimento' };
-/* ===== Associar pelo Resp. no sistema (resolve conflitos) ===== */
-function analisarResp() {
-  const out = { aplicar: [], genericos: [], semCadastro: [], fora: [] };
-  S.result.linhas.filter(l => l.origem === 'conflito' && !l.executorId).forEach(l => {
-    if (GENERIC.test(l.dentistaSistema || '')) { out.genericos.push(l); return; }
-    const d = Core.matchDentist(l.dentistaSistema, ativos());
-    if (!d) { out.semCadastro.push(l); return; }
-    if ((l.candidatos || []).includes(d.id)) out.aplicar.push([l, d]); else out.fora.push(l);
-  });
-  return out;
-}
-$('#btnAutoResp').onclick = async () => {
-  if (S.ro || !S.result) return;
-  const a = analisarResp();
-  const total = a.aplicar.length + a.genericos.length + a.semCadastro.length + a.fora.length;
-  if (!total) { toast('Nenhum conflito para resolver.'); return; }
-  const g = n => n ? `\n• ${n}` : '';
-  const txt = `Dos ${n0(total)} conflito(s):` +
-    `\n✓ ${n0(a.aplicar.length)} será(ão) associado(s) ao dentista do "Resp. no sistema" (${brl(a.aplicar.reduce((x, [l]) => x + l.valor, 0))})` +
-    (a.genericos.length ? `\n⚠ ${n0(a.genericos.length)} fica(m) pendente(s): Resp. genérico (Clínico Geral, Sem Dentista…)` : '') +
-    (a.semCadastro.length ? `\n⚠ ${n0(a.semCadastro.length)} fica(m) pendente(s): Resp. no sistema não está cadastrado` : '') +
-    (a.fora.length ? `\n⚠ ${n0(a.fora.length)} fica(m) pendente(s): Resp. no sistema não está entre os dentistas que informaram a guia` : '') +
-    `\n\nConsultas odontológicas continuam com a regra (CLINICA). Dá para desfazer depois.`;
-  if (!a.aplicar.length) { await dialog('Nada a associar automaticamente', txt, { okText: 'Entendi' }); return; }
-  if (!await dialog('Associar pelo Resp. no sistema?', txt, { okText: `Associar ${n0(a.aplicar.length)} linha(s)` })) return;
-  a.aplicar.forEach(([l, d]) => { S.overrides[l.id] = d.id; S.overridesAuto[l.id] = true; });
-  run(false); salvar();
-  toast(`${n0(a.aplicar.length)} linha(s) associadas · ${n0(total - a.aplicar.length)} continuam em conflito para avaliar`);
-  S.painel.f = 'conflito'; S.painel.page = 0; renderPainel();
-};
-$('#btnAutoRespUndo').onclick = async () => {
-  const ids = Object.keys(S.overridesAuto);
-  if (!ids.length) { toast('Não há associações automáticas para desfazer.'); return; }
-  if (!await dialog('Desfazer associação automática?', `${n0(ids.length)} linha(s) voltam a ficar como estavam antes do botão (em conflito). Trocas manuais feitas depois não são afetadas.`, { okText: 'Desfazer' })) return;
-  ids.forEach(id => { delete S.overrides[id]; delete S.overridesAuto[id]; });
-  run(false); salvar(); toast('Associação automática desfeita');
-};
-function renderAutoResp() {
-  const n = S.result ? S.result.linhas.filter(l => l.origem === 'conflito' && !l.executorId).length : 0;
-  const u = Object.keys(S.overridesAuto).length;
-  $('#btnAutoResp').innerHTML = `⚡ Associar pelo Resp. no sistema${n ? ` <span class="cnt" style="background:var(--warnSoft);color:var(--warn)">${n0(n)}</span>` : ''}`;
-  $('#btnAutoResp').disabled = S.ro || !n;
-  $('#btnAutoRespUndo').classList.toggle('hide', !u || S.ro);
-  $('#btnAutoRespUndo').textContent = `Desfazer (${n0(u)})`;
-}
-/* ===================== painel único por atendimento ===================== */
+/* ===================== conferência das guias (uma linha por guia) ===================== */
 const DEC = { pendente: '⚠ Pendente', sistema: 'Manter sistema', informado: 'Usar valor informado', split: '÷ Dividir entre dentistas' };
-const GST = { conflito: ['⚠ Conflito', 'st-outro'], diferenca: ['≠ Diferença de valor', 'st-dif'], sem_exec: ['Sem executor', 'st-dif'], nao_localizado: ['Não localizado', 'st-nao_localizado'], pendente: ['Pendente no sistema', 'st-pendente'], so_sistema: ['Só no sistema', 'st-so_sistema'], ok: ['✓ Conciliado', 'st-ok'] };
-const PSEG = [['atencao', '⚠ Precisa de ação'], ['todos', 'Todos'], ['diferenca', 'Diferença'], ['conflito', 'Conflito'], ['sem_exec', 'Sem executor'], ['nao_localizado', 'Não localizado'], ['ok', 'Conciliado'], ['so_sistema', 'Só no sistema'], ['pendente', 'Pendente']];
-const ATENCAO = new Set(['diferenca', 'conflito', 'sem_exec', 'nao_localizado']);
-const DOT = { dentista: 'var(--ok)', atendimento: '#3fae7f', sistema: 'var(--info)', manual: '#6b46c1', nao_identificado: 'var(--bad)', conflito: 'var(--warn)', split: '#2f6fb0', regra: '#0e6b63' };
-S.painel = { f: 'atencao', page: 0, open: new Set() };
+const RST = { divergencia: ['⚠ Divergência', 'st-outro'], diferenca: ['≠ Diferença de valor', 'st-dif'], sem_exec: ['Sem executor', 'st-dif'], exec_dif: ['Executor ≠ informante', 'st-outro'],
+  nao_localizado: ['Não localizado', 'st-nao_localizado'], match: ['✓ Match', 'st-ok'], resolvido: ['✓ Resolvido', 'st-ok'], sem_informe: ['Sem informe', 'st-so_sistema'], regra: ['Regra', 'st-so_sistema'] };
+const PEND_ST = new Set(['divergencia', 'diferenca', 'sem_exec', 'exec_dif', 'nao_localizado']);
+const RSEG = [['pend', '⚠ Pendências'], ['todos', 'Todas'], ['divergencia', 'Divergência'], ['diferenca', 'Diferença de valor'], ['sem_exec', 'Sem executor'], ['exec_dif', 'Executor ≠ informante'], ['nao_localizado', 'Não localizado'], ['match', 'Match'], ['resolvido', 'Resolvido'], ['sem_informe', 'Sem informe'], ['regra', 'Regra']];
+S.painel = { f: 'pend', page: 0 };
 S.gf = { dent: '', q: '' };
-function buildGrupos() {
-  const R = S.result, G = new Map();
-  const guiaAt = new Map(); S.sys.rows.forEach(r => { if (r.atendimento && !guiaAt.has(r.guia)) guiaAt.set(r.guia, r.atendimento); });
+if (!S.decGuia) S.decGuia = {};
+if (!S.decGuiaAuto) S.decGuiaAuto = {};
+const tolV = () => Math.max(0.05, +$('#tolDiv').value || 0);
+const ehRegraProc = p => S.cad.regras.some(r => r.ativo && dentById(r.dentistaId)?.ativo && Core.norm(p).includes(Core.norm(r.termo)));
+/* valor informado por guia (independe do cálculo) */
+function infPorGuia() {
+  if (!S.sys) return {};
   const sysGuias = S.sys.guiaSet, sysAt = S.sys.atSet;
-  const kL = l => l.atendimento ? 'a:' + l.atendimento : 'g:' + l.guia;
-  const gk = k => { if (!G.has(k)) G.set(k, { k, atend: k[0] === 'a' ? k.slice(2) : '', lines: [], infs: new Map(), divs: [], nes: [], guias: new Set(), procs: [], paciente: '', data: null }); return G.get(k); };
-  R.linhas.forEach(l => { const g = gk(kL(l)); g.lines.push(l); g.guias.add(l.guiaRaw); g.paciente = g.paciente || l.paciente; g.data = g.data || l.data; });
+  const porAt = {}; S.sys.rows.forEach(r => { if (!r.atendimento) return; (porAt[r.atendimento] = porAt[r.atendimento] || {}); const g = porAt[r.atendimento]; if (!ehRegraProc(r.procedimento)) g[r.guia] = (g[r.guia] || 0) + r.valor; });
+  const M = {};
   S.denFiles.filter(f => f.dentistaId).forEach(f => (f.itens || []).forEach(it => {
-    let k; if (it.guia && sysGuias.has(it.guia)) k = guiaAt.has(it.guia) ? 'a:' + guiaAt.get(it.guia) : 'g:' + it.guia; else if (it.atend && sysAt.has(it.atend)) k = 'a:' + it.atend; else return;
-    const g = gk(k); const o = g.infs.get(f.dentistaId) || { valor: 0, procs: [], guias: new Set() };
-    o.valor += it.valor || 0; if (it.procedimento) o.procs.push(it.procedimento); if (it.guiaRaw) o.guias.add(it.guiaRaw); g.infs.set(f.dentistaId, o);
-    g.paciente = g.paciente || it.paciente; g.data = g.data || it.data;
+    let k = null, viaAt = false;
+    if (it.guia && sysGuias.has(it.guia)) k = 'g:' + it.guia;
+    else if (it.atend && sysAt.has(it.atend)) { const gs = Object.entries(porAt[it.atend] || {}).sort((a, b) => b[1] - a[1]); if (!gs.length) return; k = 'g:' + gs[0][0]; viaAt = true; }
+    else return;
+    const o = ((M[k] = M[k] || {})[f.dentistaId] = M[k][f.dentistaId] || { valor: 0, procs: [], viaAt: false });
+    o.valor += it.valor || 0; if (it.procedimento) o.procs.push(it.procedimento); if (viaAt) o.viaAt = true;
   }));
-  R.divergencias.forEach(d => gk(d.key).divs.push(d));
-  R.naoEncontradas.forEach(x => { const g = gk(x.key); g.nes.push(x); g.paciente = g.paciente || x.paciente; g.data = g.data || x.data; if (x.guia) g.guias.add(x.guia); });
-  const out = [...G.values()];
-  out.forEach(g => {
-    g.sistema = g.lines.reduce((a, l) => a + l.valor, 0);
-    // vários dentistas informando o mesmo atendimento = disputa: vale o maior valor informado (não soma)
-    g.informado = Math.max(0, ...[...g.infs.values()].map(o => o.valor)) + g.nes.reduce((a, x) => a + (x.valor || 0), 0);
-    g.nInf = new Set([...g.infs.keys(), ...g.nes.map(x => x.informanteId)]).size;
-    g.temInf = g.infs.size > 0 || g.nes.length > 0;
-    // diferença = a mesma da decisão (exclui linhas que são de outros por regra, ex.: consulta → CLINICA)
-    const maior = g.divs.slice().sort((x, y) => Math.abs(y.dif) - Math.abs(x.dif))[0];
-    g.dif = maior ? maior.dif : (!g.lines.length && g.nes.length) ? g.informado : 0;
-    g.sistemaInf = maior ? maior.sistema : null;
-    g.dec = S.decAtend[g.k] || null;
-    g.decidido = decCompleta(g.dec);
-    const divPend = !g.decidido && g.divs.some(d => !d.resolucao || d.resolucao.decisao === 'pendente');
-    g.nInf0 = Object.keys(S.result.infPorKey?.[g.k] || {}).length;
-    const infVals = Object.values(S.result.infPorKey?.[g.k] || {});
-    g.sisNR = g.lines.filter(l => !l.regra).reduce((a, l) => a + l.valor, 0);
-    g.maxInf = infVals.length ? Math.max(...infVals) : null;
-    g.valorBate = g.maxInf != null && Math.abs(g.maxInf - g.sisNR) <= Math.max(0.05, +$('#tolDiv').value || 0);
-    if (!g.lines.length && g.nes.length) g.st = g.nes.every(x => x.decisao?.dentistaId || x.decisao?.descartado) ? 'ok' : 'nao_localizado';
-    else if (!g.lines.length) g.st = 'pendente';
-    else if (divPend && !g.valorBate) g.st = 'diferenca';
-    else if (!g.decidido && (divPend || g.lines.some(l => l.origem === 'conflito' && !l.executorId))) g.st = 'conflito';
-    else if (g.lines.some(l => !l.executorId && l.origem !== 'split')) g.st = 'sem_exec';
-    else if (!g.temInf) g.st = 'so_sistema';
-    else g.st = 'ok';
-    g.resolvida = g.decidido || (g.divs.length && !divPend);
-    const ex = new Set(); g.lines.forEach(l => { if (l.executorId) ex.add(l.executorId); (l.split || []).forEach(p => ex.add(p.dentistaId)); });
-    g.executores = [...ex];
-    g.dents = new Set([...ex, ...g.infs.keys(), ...g.divs.map(d => d.informanteId), ...g.nes.map(x => x.informanteId), ...g.nes.map(x => x.decisao?.dentistaId).filter(Boolean), ...g.lines.flatMap(l => l.candidatos || [])]);
-    g.busca = Core.norm([g.atend, ...g.guias, g.paciente, ...g.lines.map(l => l.procedimento + ' ' + l.dentistaSistema), ...[...g.infs.values()].flatMap(o => o.procs), ...g.nes.map(x => x.procedimento)].join(' '));
+  return M;
+}
+/* decisões por guia → parâmetro do motor (com o valor informado já resolvido) */
+function decisoesGuiaParaMotor() {
+  const inf = infPorGuia(), out = {};
+  Object.entries(S.decGuia).forEach(([k, d]) => {
+    if (!d?.destino) return;
+    const i = inf[k] || {}; const vals = Object.values(i).map(o => o.valor);
+    const alvo = d.valor === 'informado' ? (d.destino.tipo === 'dentista' && i[d.destino.dentistaId] ? i[d.destino.dentistaId].valor : (vals.length ? Math.max(...vals) : null)) : null;
+    out[k] = { valor: d.valor || 'sistema', destino: d.destino, alvo };
   });
   return out;
 }
-function gruposFiltrados(all) {
+function buildLinhasConf() {
+  const R = S.result, inf = infPorGuia(), M = new Map();
+  R.linhas.forEach(l => {
+    const k = (l.regra ? 'r:' : 'g:') + l.guia;
+    if (!M.has(k)) M.set(k, { k, guia: l.guiaRaw, data: l.data, paciente: l.paciente, lines: [], procs: [], resp: new Set(), regra: !!l.regra });
+    const o = M.get(k); o.lines.push(l); o.procs.push(l.procedimento); o.resp.add(l.dentistaSistema);
+  });
+  Object.entries(inf).forEach(([k, i]) => { const tgt = M.get(k) || M.get('r:' + k.slice(2)); if (tgt) tgt.inf = i; });
+  const rows = [...M.values()].map(o => {
+    o.inf = o.inf || {};
+    o.sis = o.lines.reduce((a, l) => a + l.valor, 0);
+    const ex = new Set(); let semEx = false; o.lines.forEach(l => { if (l.executorId) ex.add(l.executorId); else if (l.origem === 'split') (l.split || []).forEach(p => ex.add(p.dentistaId)); else semEx = true; });
+    o.executores = [...ex]; o.semExec = semEx; o.split = o.lines.some(l => l.origem === 'split');
+    const ids = Object.keys(o.inf); o.nInf = ids.length; o.infIds = ids;
+    o.maxInf = ids.length ? Math.max(...ids.map(id => o.inf[id].valor)) : null;
+    o.dif = o.nInf ? o.maxInf - o.sis : 0;
+    o.dec = S.decGuia[o.k] || null;
+    if (o.dec?.destino) o.st = 'resolvido';
+    else if (o.regra) o.st = 'regra';
+    else if (o.nInf >= 2) o.st = 'divergencia';
+    else if (o.nInf === 1 && Math.abs(o.dif) > tolV()) o.st = 'diferenca';
+    else if (semEx) o.st = 'sem_exec';
+    else if (o.nInf === 1) o.st = (o.executores.length === 1 && o.executores[0] === ids[0]) || o.split ? 'match' : 'exec_dif';
+    else o.st = 'sem_informe';
+    o.resp = [...o.resp];
+    o.busca = Core.norm([o.guia, o.paciente, ...o.procs, ...o.resp, o.lines[0]?.atendimento].join(' '));
+    return o;
+  });
+  // conferência pelo atendimento: o dentista costuma informar 1 guia para o atendimento todo, e o sistema divide em várias
+  const porAt = {};
+  rows.forEach(o => { const at = o.lines[0]?.atendimento; if (at && !o.regra) (porAt[at] = porAt[at] || []).push(o); });
+  Object.values(porAt).forEach(rs => {
+    if (rs.length < 2) return;
+    const dents = new Set(rs.flatMap(o => [...o.infIds, ...o.executores]));
+    dents.forEach(D => {
+      const inf = rs.reduce((a, o) => a + (o.inf[D]?.valor || 0), 0);
+      if (!inf) return;
+      const sis = rs.reduce((a, o) => a + o.lines.filter(l => l.executorId === D).reduce((x, l) => x + l.valor, 0), 0);
+      if (Math.abs(inf - sis) > tolV()) return;
+      const gs = rs.filter(o => o.inf[D] || o.executores.includes(D));
+      gs.forEach(o => {
+        if (o.dec?.destino || o.nInf >= 2) return;
+        if (['diferenca', 'sem_informe', 'exec_dif', 'match'].includes(o.st) && (o.inf[D] || (o.executores.length === 1 && o.executores[0] === D && !o.semExec))) {
+          o.st = 'match'; o.viaAt = { dentistaId: D, guias: rs.map(x => x.guia), inf, sis };
+        }
+      });
+    });
+  });
+  R.naoEncontradas.forEach(x => rows.push({ k: x.id, ne: x, guia: x.guia || ('atend. ' + x.atend), data: x.data, paciente: x.paciente, procs: [x.procedimento], resp: [], lines: [], sis: 0,
+    inf: { [x.informanteId]: { valor: x.valor || 0, procs: [x.procedimento] } }, infIds: [x.informanteId], nInf: 1, maxInf: x.valor || 0, dif: x.valor || 0, executores: x.decisao?.dentistaId ? [x.decisao.dentistaId] : [],
+    st: x.decisao?.dentistaId || x.decisao?.descartado ? 'resolvido' : 'nao_localizado', busca: Core.norm([x.guia, x.atend, x.paciente, x.procedimento].join(' ')) }));
+  return rows;
+}
+function linhasFiltradas(all) {
   const qq = Core.norm(S.gf.q), D = S.gf.dent;
-  return all.filter(g => (!D || (D === '_none' ? g.lines.some(l => !l.executorId && l.origem !== 'split') : g.dents.has(D))) && (!qq || g.busca.includes(qq)));
+  const nomeD = D && D !== '_none' ? dentById(D) : null;
+  return all.filter(o => (!D || (D === '_none' ? o.semExec : o.executores.includes(D) || o.infIds.includes(D) || (nomeD && o.resp.some(r => Core.matchDentist(r, [nomeD]))))) && (!qq || o.busca.includes(qq)));
 }
 function renderFiltroGlobal() {
-  const opts = `<option value="">Todos os dentistas</option><option value="_none">— linhas sem executor —</option>` + ativos().map(d => `<option value="${d.id}">${esc(d.nome)}</option>`).join('');
+  const opts = `<option value="">Todos os dentistas</option><option value="_none">— guias sem executor —</option>` + ativos().map(d => `<option value="${d.id}">${esc(d.nome)}</option>`).join('');
   $('#gDent').innerHTML = opts; $('#gDent').value = S.gf.dent;
   if ($('#gBusca').value !== S.gf.q) $('#gBusca').value = S.gf.q;
-  const nome = S.gf.dent === '_none' ? 'linhas sem executor' : dentById(S.gf.dent)?.nome;
+  const nome = S.gf.dent === '_none' ? 'guias sem executor' : dentById(S.gf.dent)?.nome;
   $('#gInfo').innerHTML = S.gf.dent || S.gf.q ? `Filtrando ${nome ? '<b>' + esc(nome) + '</b>' : ''}${S.gf.q ? ` “${esc(S.gf.q)}”` : ''} em todas as tabelas · <a href="#" id="gLimpar">limpar</a>` : '';
   const lk = $('#gLimpar'); if (lk) lk.onclick = e => { e.preventDefault(); setFiltroGlobal('', ''); };
 }
@@ -709,175 +700,149 @@ function setFiltroGlobal(dent, q) { S.gf.dent = dent; S.gf.q = q; S.painel.page 
 $('#gDent').onchange = e => setFiltroGlobal(e.target.value, S.gf.q);
 let gTimer = null; $('#gBusca').oninput = e => { clearTimeout(gTimer); gTimer = setTimeout(() => { S.gf.q = e.target.value; S.painel.page = 0; renderFiltroGlobal(); renderPainel(); }, 250); };
 
-function linhaSub(l) {
-  const pg = linhaPgto(l.id);
-  return `<tr><td class="mono" style="font-size:12px">${esc(l.guiaRaw)}</td><td title="${esc(l.procedimento)}">${esc(l.procedimento || '—')}</td>
-    <td><span class="${S.sitBase.has(l.situacao) || l.aprovado ? '' : 'muted'}">${esc(l.situacao)}${l.aprovado ? ' ✓' : ''}</span></td>
-    <td title="${esc(l.dentistaSistema)}" class="${GENERIC.test(l.dentistaSistema) ? 'muted' : ''}">${esc(l.dentistaSistema)}</td>
-    <td title="${esc(S.overridesAuto[l.id] && l.origem === 'manual' ? 'Associado pelo botão Resp. no sistema' : (l.alerta || l.regraTxt || ORIG_LBL[l.origem]))}"><div class="row" style="gap:4px;flex-wrap:nowrap"><span class="dot" style="background:${DOT[l.origem]}"></span>
-      <select class="inp" data-ov="${l.id}" style="flex:1;min-width:0" ${l.decGrupo ? 'disabled title="Definido na decisão do atendimento"' : ''}>${l.origem === 'split' ? `<option value="_cur" selected>÷ ${esc(partesTxt(l.split))}</option>` : ''}${dentOpts(l.executorId, l.origem === 'conflito' ? '⚠ escolher…' : '— sem executor —')}<option value="_split">÷ Dividir guia entre dentistas…</option></select></div></td>
-    <td class="num">${brl(l.valor)}${pg ? `<div style="font-size:10.5px;color:var(--ok);font-family:Manrope">pg ${dataBR(pg).slice(0, 5)}</div>` : ''}</td></tr>`;
+function execSelect(o) {
+  if (o.ne) { const d = o.ne.decisao || {}; const sel = d.descartado ? '_x' : (d.dentistaId || '');
+    return `<select class="inp" data-ne="${esc(o.ne.id)}" style="${sel ? '' : 'border-color:var(--warn)'}"><option value="">⚠ atribuir a…</option><option value="_x" ${sel === '_x' ? 'selected' : ''}>Não considerar</option>${ativos().map(dd => `<option value="${dd.id}" ${dd.id === sel ? 'selected' : ''}>${esc(dd.nome)}${dd.id === o.ne.informanteId ? ' (informou)' : ''}</option>`).join('')}</select>`; }
+  const d = o.dec?.destino;
+  const cur = d ? (d.tipo === 'split' ? '_split' : d.dentistaId) : o.split ? '_cur' : o.executores.length === 1 && !o.semExec ? o.executores[0] : '';
+  const curTxt = o.split ? '÷ ' + partesTxt(o.lines.find(l => l.split)?.split) : '';
+  const opts = [...o.infIds, ...ativos().map(x => x.id).filter(id => !o.infIds.includes(id))];
+  return `<select class="inp" data-gx="${esc(o.k)}" style="${cur ? '' : 'border-color:var(--warn)'}">
+    ${cur ? '' : `<option value="" selected>${o.nInf >= 2 ? '⚠ escolher…' : '— sem executor —'}</option>`}
+    ${cur === '_cur' ? `<option value="_cur" selected>${esc(curTxt)}</option>` : ''}
+    ${opts.map(id => `<option value="${id}" ${cur === id ? 'selected' : ''}>${esc(dentById(id)?.nome || '?')}${o.inf[id] ? ` (informou)` : ''}</option>`).join('')}
+    <option value="_split" ${cur === '_split' ? 'selected' : ''}>${cur === '_split' ? '÷ ' + esc(partesTxt(d.partes)) : '÷ Dividir entre dentistas…'}</option></select>`;
 }
-function detalheGrupo(g) {
-  let h = '';
-  if (g.lines.length) h += `<div class="gsec"><b>Linhas do sistema</b><span class="muted"> · ${n0(g.lines.length)} · ${brl(g.sistema)}</span></div>
-    <table class="t sub"><colgroup><col style="width:11%"><col style="width:30%"><col style="width:10%"><col style="width:16%"><col style="width:23%"><col style="width:10%"></colgroup>
-    <thead><tr><th>Guia</th><th>Procedimento</th><th>Situação</th><th>Resp. no sistema</th><th>Executor</th><th class="num">Valor</th></tr></thead><tbody>${g.lines.map(linhaSub).join('')}</tbody></table>`;
-  else if (!g.nes.length) h += `<div class="gsec muted">As linhas deste atendimento estão com status <b>Pendente</b> no sistema e ficam fora do movimento. Aprove o pagamento na aba <b>Guias pendentes</b>.</div>`;
-  if (g.infs.size) h += `<div class="gsec"><b>Informado pelos dentistas</b></div><div class="ginf">${[...g.infs.entries()].map(([id, o]) => `<div><b>${esc(dentById(id)?.nome || '—')}</b> · ${brl(o.valor)} <span class="muted">· guia ${esc([...o.guias].join(', ') || '—')} · ${esc(o.procs.join('; ') || '—')}</span></div>`).join('')}</div>`;
-  const precisaDecisao = g.divs.length || g.lines.some(l => l.origem === 'conflito' && !l.executorId) || g.decidido;
-  if (precisaDecisao && g.lines.length) h += blocoDecisao(g);
-  if (g.nes.length) h += `<div class="gsec"><b>Informado e não encontrado no sistema</b> <span class="muted">· nem a guia nem o atendimento existem na planilha do sistema</span></div>` + g.nes.map(x => { const d = x.decisao || {}; const sel = d.descartado ? '_x' : (d.dentistaId || ''); return `<div class="gdiv"><div><b>${esc(dentById(x.informanteId)?.nome || '—')}</b> · ${esc(x.procedimento || '—')} · informado ${x.valor == null ? '—' : brl(x.valor)}</div>
-    <div class="row" style="gap:8px;flex-wrap:nowrap"><select class="inp" data-ne="${esc(x.id)}" style="width:240px;${sel ? '' : 'border-color:var(--warn)'}"><option value="">⚠ pendente</option><option value="_x" ${sel === '_x' ? 'selected' : ''}>Não considerar</option>${ativos().map(dd => `<option value="${dd.id}" ${dd.id === sel ? 'selected' : ''}>${esc(dd.nome)}${dd.id === x.informanteId ? ' (informou)' : ''}</option>`).join('')}</select>
-    <span class="muted" style="font-size:12px">valor</span><input class="inp num" type="number" step="0.01" min="0" data-nev="${esc(x.id)}" value="${(+(d.valor ?? x.valor ?? 0)).toFixed(2)}" ${d.dentistaId ? '' : 'disabled'} style="width:110px;text-align:right"></div></div>`; }).join('');
-  return h;
-}
-const decCompleta = d => !!d && (d.valor === 'sistema' || d.valor === 'informado') && !!d.destino && ((d.destino.tipo === 'dentista' && !!d.destino.dentistaId) || (d.destino.tipo === 'split' && (d.destino.partes || []).filter(p => p.dentistaId && p.pct > 0).length >= 2));
-function blocoDecisao(g) {
-  const inf = S.result.infPorKey?.[g.k] || {};
-  const infs = Object.entries(inf);
-  const semRegra = g.lines.filter(l => !l.regra);
-  const sis = semRegra.reduce((a, l) => a + l.valor, 0);
-  const regraV = g.lines.filter(l => l.regra).reduce((a, l) => a + l.valor, 0);
-  const d = g.dec || {};
-  const destVal = d.destino?.tipo === 'split' ? '_split' : d.destino?.tipo === 'dentista' ? d.destino.dentistaId : '';
-  const alvoInf = d.destino?.tipo === 'dentista' && inf[d.destino.dentistaId] != null ? inf[d.destino.dentistaId] : (infs.length ? Math.max(...infs.map(x => x[1])) : 0);
-  const valor = d.valor === 'informado' ? alvoInf : sis;
-  const resultado = !decCompleta(d) ? '' : d.destino.tipo === 'dentista'
-    ? `<b>${esc(dentById(d.destino.dentistaId)?.nome || '?')}</b> recebe <b>${brl(valor)}</b>`
-    : d.destino.partes.map(p => `<b>${esc(dentById(p.dentistaId)?.nome || '?')}</b> ${String(p.pct).replace('.', ',')}% = <b>${brl(valor * p.pct / 100)}</b>`).join(' · ');
-  const aviso = infs.length > 1 ? `<div class="gwarn">⚠ <b>${infs.length} dentistas informaram esta guia na produção:</b> ${infs.map(([id, v]) => `${esc(dentById(id)?.nome || '?')} (${brl(v)})`).join(' · ')}</div>` : '';
-  const opsDest = `<option value="">— escolha —</option><option value="_split" ${destVal === '_split' ? 'selected' : ''}>÷ Dividir entre dentistas…</option>
-    <optgroup label="Associar tudo a um dentista">${[...infs.map(x => x[0]), ...ativos().map(x => x.id).filter(id => !(id in inf))].map(id => `<option value="${id}" ${destVal === id ? 'selected' : ''}>${esc(dentById(id)?.nome || '?')}${id in inf ? ` (informou ${brl(inf[id])})` : ''}</option>`).join('')}</optgroup>`;
-  return `<div class="gdec ${decCompleta(d) ? 'ok' : ''}">
-    <div class="gdec-h">${decCompleta(d) ? '✓ <b>Decidido</b>' : g.valorBate ? '⚠ <b>Conflito: mais de um dentista informou esta guia</b> (valor confere)' : '≠ <b>Diferença de valor</b>'} · sistema <b>${brl(sis)}</b>${regraV ? ` <span class="muted">(+ ${brl(regraV)} por regra, ex.: consulta → CLINICA)</span>` : ''} · informado <b>${infs.length ? (infs.length > 1 ? 'até ' : '') + brl(Math.max(...infs.map(x => x[1]))) : '—'}</b></div>
-    ${aviso}
-    <div class="row" style="gap:8px;flex-wrap:nowrap;margin-top:8px">
-      <select class="inp" data-gval="${esc(g.k)}" style="width:300px;${d.valor ? '' : 'border-color:var(--warn)'}"><option value="">⚠ Pendente — qual valor vale?</option><option value="informado" ${d.valor === 'informado' ? 'selected' : ''}>Acatar o valor informado pelo dentista</option><option value="sistema" ${d.valor === 'sistema' ? 'selected' : ''}>Acatar o valor informado no sistema</option></select>
-      <select class="inp" data-gdest="${esc(g.k)}" style="width:320px;${destVal ? '' : 'border-color:var(--warn)'}">${opsDest}</select>
-      ${d.destino?.tipo === 'split' ? `<button class="btn sm" data-gsplit="${esc(g.k)}">Editar divisão</button>` : ''}
-      ${g.dec ? `<button class="btn sm ghost" data-gclear="${esc(g.k)}" title="Voltar para pendente">↺</button>` : ''}
-    </div>
-    ${resultado ? `<div class="gres">Resultado: ${resultado}${d.valor === 'informado' && Math.abs(valor - sis) > 0.004 ? ` <span class="muted">(sistema ${brl(sis)} + ajuste ${brl(valor - sis)})</span>` : ''}</div>` : ''}
-  </div>`;
+function valorSelect(o) {
+  if (o.ne) return `<span class="muted" style="font-size:12px">informado</span>`;
+  if (!o.nInf || o.regra) return '<span class="muted">—</span>';
+  const v = o.dec?.valor || '';
+  const precisa = Math.abs(o.dif) > tolV();
+  if (!precisa && !v) return '<span class="muted" style="font-size:12px">igual</span>';
+  return `<select class="inp" data-gv="${esc(o.k)}" style="${v ? '' : 'border-color:var(--warn)'}"><option value="" ${v ? '' : 'selected'}>⚠ escolher</option><option value="informado" ${v === 'informado' ? 'selected' : ''}>Informado ${brl(o.maxInf)}</option><option value="sistema" ${v === 'sistema' ? 'selected' : ''}>Sistema ${brl(o.sis)}</option></select>`;
 }
 function renderPainel() {
-  const all = buildGrupos(); S.grupos = all;
-  const base = gruposFiltrados(all);
-  const P = S.painel;
-  const cnt = k => k === 'todos' ? base.length : k === 'atencao' ? base.filter(g => ATENCAO.has(g.st)).length : base.filter(g => g.st === k).length;
-  $('#segPainel').innerHTML = PSEG.filter(([k]) => k === 'todos' || k === 'atencao' || cnt(k)).map(([k, t]) => `<button class="${P.f === k ? 'on' : ''}" data-pf="${k}">${t}<em>${n0(cnt(k))}</em></button>`).join('');
+  const all = buildLinhasConf(); S.linhasConf = all;
+  const base = linhasFiltradas(all), P = S.painel;
+  const cnt = k => k === 'todos' ? base.length : k === 'pend' ? base.filter(o => PEND_ST.has(o.st)).length : base.filter(o => o.st === k).length;
+  $('#segPainel').innerHTML = RSEG.filter(([k]) => k === 'todos' || k === 'pend' || cnt(k)).map(([k, t]) => `<button class="${P.f === k ? 'on' : ''}" data-pf="${k}">${t}<em>${n0(cnt(k))}</em></button>`).join('');
   $('#segPainel').querySelectorAll('button').forEach(b => b.onclick = () => { P.f = b.dataset.pf; P.page = 0; renderPainel(); });
-  const list = base.filter(g => P.f === 'todos' || (P.f === 'atencao' ? ATENCAO.has(g.st) : g.st === P.f))
-    .sort((a, b) => (ATENCAO.has(b.st) - ATENCAO.has(a.st)) || Math.abs(b.dif) - Math.abs(a.dif) || (a.data && b.data ? a.data - b.data : 0));
-  const PG = 30, pages = Math.max(1, Math.ceil(list.length / PG)); if (P.page >= pages) P.page = pages - 1;
+  const ord = { divergencia: 0, diferenca: 1, sem_exec: 2, exec_dif: 3, nao_localizado: 4 };
+  const list = base.filter(o => P.f === 'todos' || (P.f === 'pend' ? PEND_ST.has(o.st) : o.st === P.f))
+    .sort((a, b) => ((ord[a.st] ?? 9) - (ord[b.st] ?? 9)) || Math.abs(b.dif) - Math.abs(a.dif) || ((a.data || 0) - (b.data || 0)));
+  const PG = 50, pages = Math.max(1, Math.ceil(list.length / PG)); if (P.page >= pages) P.page = pages - 1;
   const sl = list.slice(P.page * PG, (P.page + 1) * PG);
-  const exTxt = g => g.executores.length ? g.executores.map(id => dentById(id)?.nome || '?').join(', ') : '<span class="muted">—</span>';
-  const infTxt = g => g.temInf ? `${g.nInf > 1 ? 'até ' : ''}${brl(g.informado)}<div class="muted" style="font-size:11px;overflow:hidden;text-overflow:ellipsis" title="${esc([...g.infs.keys(), ...g.nes.map(x => x.informanteId)].filter((v, i, a) => a.indexOf(v) === i).map(id => dentById(id)?.nome || '?').join(', '))}">${g.nInf > 1 ? `<b style="color:var(--warn)">${g.nInf} dentistas informaram</b>` : esc([...g.infs.keys(), ...g.nes.map(x => x.informanteId)].filter((v, i, a) => a.indexOf(v) === i).map(id => dentById(id)?.nome || '?').join(', '))}</div>` : '<span class="muted">—</span>';
-  $('#tblPainel').innerHTML = `<colgroup><col style="width:3%"><col style="width:20%"><col style="width:12%"><col style="width:17%"><col style="width:10%"><col style="width:13%"><col style="width:10%"><col style="width:15%"></colgroup>
-    <thead><tr><th></th><th>Atendimento / paciente</th><th>Guia(s)</th><th>Executor(es)</th><th class="num">Sistema</th><th class="num">Informado</th><th class="num">Diferença</th><th>Situação</th></tr></thead>
-    <tbody>${sl.length ? sl.map(g => { const op = P.open.has(g.k); return `<tr class="grow ${op ? 'open' : ''}" data-gk="${esc(g.k)}">
-      <td style="color:var(--muted)">${op ? '▾' : '▸'}</td>
-      <td class="two"><span class="l"><span class="mono" style="font-size:12px">${esc(g.atend || '—')}</span> · ${esc(g.paciente || '—')}</span><small>${g.data ? new Date(g.data).toLocaleDateString('pt-BR') : ''}${g.lines.length ? ` · ${n0(g.lines.length)} linha(s)` : ''}</small></td>
-      <td class="mono" style="font-size:12px" title="${esc([...g.guias].join(', '))}">${esc([...g.guias].join(', ') || '—')}</td>
-      <td title="${esc(g.executores.map(id => dentById(id)?.nome).join(', '))}">${exTxt(g)}</td>
-      <td class="num" title="${g.sistemaInf != null ? 'Atribuído ao dentista que informou: ' + brl(g.sistemaInf) : ''}">${g.lines.length ? brl(g.sistema) : '—'}${g.sistemaInf != null && Math.abs(g.sistemaInf - g.sistema) > 0.004 ? `<div class="muted" style="font-size:11px" title="Valor do sistema atribuído a quem informou">p/ ele ${brl(g.sistemaInf)}</div>` : ''}</td><td class="num">${infTxt(g)}</td>
-      <td class="num" style="color:${!g.temInf || Math.abs(g.dif) < 0.05 ? 'var(--muted)' : g.dif > 0 ? 'var(--bad)' : 'var(--info)'}">${g.temInf ? brl(g.dif) : '—'}</td>
-      <td><span class="tag ${GST[g.st][1]}">${GST[g.st][0]}</span>${g.nInf0 > 1 && !g.decidido ? ` <span title="${g.nInf0} dentistas informaram esta guia na produção" style="color:var(--warn);cursor:help;font-weight:800">⚠</span>` : ''}${g.resolvida ? ' <span class="tag st-ok" title="Decisão tomada">decidido</span>' : ''}</td></tr>
-      ${op ? `<tr class="gdet"><td></td><td colspan="7">${detalheGrupo(g)}</td></tr>` : ''}`; }).join('') : `<tr><td colspan="8" class="empty">${P.f === 'atencao' ? '✓ Nada precisando de ação neste filtro.' : 'Nada neste filtro.'}</td></tr>`}</tbody>
-    <tfoot><tr><td></td><td colspan="3">${n0(list.length)} atendimento(s)</td><td class="num">${brl(list.reduce((a, g) => a + g.sistema, 0))}</td><td class="num">${brl(list.reduce((a, g) => a + (g.temInf ? g.informado : 0), 0))}</td><td></td><td></td></tr></tfoot>`;
-  $('#pagerPainel').innerHTML = `<button class="btn sm ghost" id="pExp">${sl.every(g => P.open.has(g.k)) && sl.length ? 'Recolher todos' : 'Expandir todos da página'}</button><span class="sp"></span>
-    <button class="btn sm" ${P.page ? '' : 'disabled'} data-pp="-1">‹</button><span>pág. ${P.page + 1} de ${pages}</span><button class="btn sm" ${P.page < pages - 1 ? '' : 'disabled'} data-pp="1">›</button>`;
+  const infCell = o => (!o.nInf && o.viaAt) ? `<span class="muted" style="font-size:11px" title="Atendimento ${esc(o.lines[0]?.atendimento)}: informado ${brl(o.viaAt.inf)} nas guias ${esc(o.viaAt.guias.join(', '))}">pelo atendimento</span>` : !o.nInf ? '<span class="muted">—</span>' : o.infIds.map(id => `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(dentById(id)?.nome)}: ${esc((o.inf[id].procs || []).join('; '))}${o.inf[id].viaAt ? ' (informado pelo atendimento)' : ''}">${brl(o.inf[id].valor)} <span class="muted" style="font-family:Manrope;font-size:11px">${esc((dentById(id)?.nome || '?').replace(/^(Dra?\.?\s)/i, ''))}</span></div>`).join('');
+  $('#tblPainel').innerHTML = `<colgroup><col style="width:8%"><col style="width:16%"><col style="width:11%"><col style="width:15%"><col style="width:8%"><col style="width:13%"><col style="width:8%"><col style="width:9%"><col style="width:12%"></colgroup>
+    <thead><tr><th>Guia</th><th>Paciente / procedimento</th><th>Resp. no sistema</th><th>Executor</th><th class="num">Sistema</th><th class="num">Informado</th><th class="num">Dif.</th><th>Status</th><th>Valor a pagar</th></tr></thead>
+    <tbody>${sl.length ? sl.map(o => `<tr>
+      <td class="two"><span class="l mono" style="font-size:12px">${esc(o.guia)}</span><small>${o.data ? new Date(o.data).toLocaleDateString('pt-BR').slice(0, 5) : ''}${o.lines[0]?.atendimento ? ' · ' + esc(o.lines[0].atendimento) : ''}</small></td>
+      <td class="two"><span class="l" title="${esc(o.paciente)}">${esc(o.paciente || '—')}</span><small title="${esc(o.procs.join('; '))}">${esc(o.procs[0] || '—')}${o.procs.length > 1 ? ` <b>+${o.procs.length - 1}</b>` : ''}</small></td>
+      <td title="${esc(o.resp.join(', '))}" class="${o.resp.every(r => GENERIC.test(r)) ? 'muted' : ''}">${esc(o.resp.join(', ') || '—')}</td>
+      <td>${execSelect(o)}</td>
+      <td class="num">${o.ne ? '<span class="muted">—</span>' : brl(o.sis)}</td>
+      <td class="num">${infCell(o)}</td>
+      <td class="num" style="color:${!o.nInf || o.viaAt || Math.abs(o.dif) <= tolV() ? 'var(--muted)' : o.dif > 0 ? 'var(--bad)' : 'var(--info)'}">${o.viaAt ? `<span title="Bate pelo atendimento">≈ 0</span>` : o.nInf ? brl(o.dif) : '—'}</td>
+      <td><span class="tag ${RST[o.st][1]}" title="${o.nInf >= 2 ? `${o.nInf} dentistas informaram a guia na produção` : o.viaAt ? `Conferido pelo atendimento ${o.lines[0]?.atendimento}: informado ${brl(o.viaAt.inf)} = sistema ${brl(o.viaAt.sis)} (guias ${o.viaAt.guias.join(', ')})` : ''}">${RST[o.st][0]}${o.viaAt ? '*' : ''}</span>${o.dec ? ` <button class="btn ghost sm" data-gu="${esc(o.k)}" title="Desfazer decisão" style="padding:2px 6px">↺</button>` : ''}</td>
+      <td>${valorSelect(o)}</td></tr>`).join('') : `<tr><td colspan="9" class="empty">${P.f === 'pend' ? '✓ Nenhuma pendência neste filtro.' : 'Nada neste filtro.'}</td></tr>`}</tbody>
+    <tfoot><tr><td colspan="4">${n0(list.length)} guia(s)</td><td class="num">${brl(list.reduce((a, o) => a + o.sis, 0))}</td><td class="num">${brl(list.reduce((a, o) => a + (o.maxInf || 0), 0))}</td><td></td><td></td><td></td></tr></tfoot>`;
+  $('#pagerPainel').innerHTML = `<span>${n0(list.length)} guia(s)</span><span class="sp"></span><button class="btn sm" ${P.page ? '' : 'disabled'} data-pp="-1">‹</button><span>pág. ${P.page + 1} de ${pages}</span><button class="btn sm" ${P.page < pages - 1 ? '' : 'disabled'} data-pp="1">›</button>`;
   $('#pagerPainel').querySelectorAll('[data-pp]').forEach(b => b.onclick = () => { P.page += +b.dataset.pp; renderPainel(); });
-  $('#pExp').onclick = () => { const all2 = sl.every(g => P.open.has(g.k)); sl.forEach(g => all2 ? P.open.delete(g.k) : P.open.add(g.k)); renderPainel(); };
-  const T = $('#tblPainel');
-  T.querySelectorAll('tr.grow').forEach(tr => tr.onclick = () => { const k = tr.dataset.gk; P.open.has(k) ? P.open.delete(k) : P.open.add(k); renderPainel(); });
-  bindPainelAcoes(T);
+  // KPI de pendências a partir da tabela
+  const pend = all.filter(o => PEND_ST.has(o.st));
+  const kp = $('#kpiPend'); if (kp) { kp.classList.toggle('bad', pend.length > 0); kp.querySelector('b').textContent = n0(pend.length);
+    kp.querySelector('small').textContent = `${n0(pend.filter(o => o.st === 'divergencia').length)} diverg. · ${n0(pend.filter(o => o.st === 'diferenca').length)} dif. valor · ${n0(pend.filter(o => o.st === 'sem_exec').length)} sem exec. · ${n0(pend.filter(o => o.st === 'nao_localizado').length)} não localiz.`; }
+  bindConf($('#tblPainel'));
+  renderAutoResp();
   applyRO();
 }
-function bindPainelAcoes(T) {
-  const R = S.result;
-  T.querySelectorAll('[data-ov]').forEach(s => s.onchange = async () => {
-    const l = R.linhas.find(x => x.id === +s.dataset.ov);
-    const daDivergencia = l.origem === 'split' && !S.splits[l.guia];
-    if (s.value === '_cur') return;
-    if (s.value === '_split') {
-      if (daDivergencia) { toast('Esta linha foi dividida na decisão da diferença. Ajuste por lá.'); renderPainel(); return; }
-      const gl = R.linhas.filter(x => x.guia === l.guia);
-      const cur = S.splits[l.guia]?.partes || [{ dentistaId: l.executorId || '', pct: 50 }, { dentistaId: '', pct: 50 }];
-      const r = await abrirSplit({ titulo: `Dividir a guia ${l.guiaRaw}`, hint: `${gl.length} linha(s) · ${l.paciente || ''}. A divisão vale para todas as linhas desta guia; cada uma mantém sua situação.`, total: gl.reduce((a, x) => a + x.valor, 0), partes: cur, podeRemover: !!S.splits[l.guia] });
-      if (r?.remover) delete S.splits[l.guia]; else if (r) S.splits[l.guia] = { partes: r.partes };
-      run(false); salvar(); return;
-    }
-    if (daDivergencia) { toast('Esta linha foi dividida na decisão da diferença. Ajuste por lá.'); renderPainel(); return; }
-    if (S.splits[l.guia]) { delete S.splits[l.guia]; toast(`Divisão da guia ${l.guiaRaw} removida`); }
-    if (linhaPgto(l.id)) toast(`Atenção: esta linha já foi enviada para pagamento em ${dataBR(linhaPgto(l.id))}`);
-    S.overrides[s.dataset.ov] = s.value; delete S.overridesAuto[s.dataset.ov]; run(false); salvar();
-  });
-  const editarSplitDiv = async d => {
-    const cur = S.resolucoes[d.id]?.decisao === 'split' ? S.resolucoes[d.id] : null;
-    const r = await abrirSplit({ titulo: `Dividir ${d.atendimento ? 'o atendimento ' + d.atendimento : 'a guia ' + d.guia}`, hint: `${d.paciente || ''} · informado por ${dentById(d.informanteId)?.nome || '—'}. Escolha o valor a dividir e o percentual de cada dentista.`,
-      total: d.sistema, totalInf: d.informado, base: cur?.base || 'sistema', partes: cur?.partes || [{ dentistaId: d.informanteId, pct: 50 }, { dentistaId: '', pct: 50 }], podeRemover: !!cur });
-    if (r?.remover) delete S.resolucoes[d.id]; else if (r) S.resolucoes[d.id] = { decisao: 'split', base: r.base, partes: r.partes };
-    run(false); salvar();
+function bindConf(T) {
+  const row = k => S.linhasConf.find(o => o.k === k);
+  const setDec = (k, patch) => { const d = { ...(S.decGuia[k] || {}), ...patch }; if (!d.destino && !d.valor) delete S.decGuia[k]; else S.decGuia[k] = d; delete S.decGuiaAuto[k]; run(false); salvar(); };
+  const split = async (o, valor) => {
+    const cur = o.dec?.destino?.tipo === 'split' ? o.dec.destino.partes : o.nInf >= 2 ? o.infIds.map(id => ({ dentistaId: id, pct: +(100 / o.nInf).toFixed(2) })) : [{ dentistaId: o.infIds[0] || o.executores[0] || '', pct: 50 }, { dentistaId: '', pct: 50 }];
+    const r = await abrirSplit({ titulo: `Dividir a guia ${o.guia}`, hint: `${o.paciente || ''} · ${o.procs.join('; ')}`, total: valor === 'informado' && o.maxInf != null ? o.maxInf : o.sis, partes: cur, podeRemover: false });
+    if (!r) { renderPainel(); return; }
+    setDec(o.k, { destino: { tipo: 'split', partes: r.partes }, valor: valor || o.dec?.valor || (Math.abs(o.dif) > tolV() ? undefined : 'sistema') });
   };
-  T.querySelectorAll('[data-dd]').forEach(x => x.onchange = () => {
-    const d = R.divergencias.find(y => y.id === x.dataset.dd); const cur = S.resolucoes[d.id] || {};
-    if (x.value === 'split') { editarSplitDiv(d); return; }
-    if (x.value === 'pendente') delete S.resolucoes[d.id]; else S.resolucoes[d.id] = { decisao: x.value, dentistaId: cur.dentistaId ?? d.informanteId };
-    run(false); salvar();
+  T.querySelectorAll('[data-gx]').forEach(x => x.onchange = () => {
+    const o = row(x.dataset.gx); if (x.value === '_cur') return;
+    if (x.value === '_split') { split(o, o.dec?.valor); return; }
+    if (o.lines.some(l => linhaPgto(l.id))) toast('Atenção: esta guia já foi enviada para pagamento.');
+    setDec(o.k, { destino: { tipo: 'dentista', dentistaId: x.value }, valor: o.dec?.valor || (Math.abs(o.dif) > tolV() && o.nInf ? undefined : 'sistema') });
   });
-  T.querySelectorAll('[data-dse]').forEach(b => b.onclick = () => editarSplitDiv(R.divergencias.find(y => y.id === b.dataset.dse)));
-  T.querySelectorAll('[data-dt]').forEach(x => x.onchange = () => { const r = S.resolucoes[x.dataset.dt]; if (!r) return; r.dentistaId = x.value; run(false); salvar(); });
+  T.querySelectorAll('[data-gv]').forEach(x => x.onchange = () => {
+    const o = row(x.dataset.gv); const valor = x.value || undefined;
+    let destino = o.dec?.destino;
+    if (valor && !destino && o.nInf === 1) destino = { tipo: 'dentista', dentistaId: o.infIds[0] };
+    if (valor && !destino) { S.decGuia[o.k] = { ...(S.decGuia[o.k] || {}), valor }; toast('Agora escolha o executor (associar a um dentista ou dividir).'); renderPainel(); salvar(); return; }
+    setDec(o.k, { valor, destino });
+  });
+  T.querySelectorAll('[data-gu]').forEach(b => b.onclick = () => { delete S.decGuia[b.dataset.gu]; delete S.decGuiaAuto[b.dataset.gu]; run(false); salvar(); toast('Decisão desfeita'); });
   T.querySelectorAll('[data-ne]').forEach(sl => sl.onchange = () => {
-    const id = sl.dataset.ne, x = R.naoEncontradas.find(y => y.id === id), cur = S.lancamentos[id] || {};
+    const id = sl.dataset.ne, x = S.result.naoEncontradas.find(y => y.id === id), cur = S.lancamentos[id] || {};
     if (!sl.value) delete S.lancamentos[id]; else if (sl.value === '_x') S.lancamentos[id] = { descartado: true }; else S.lancamentos[id] = { dentistaId: sl.value, valor: cur.valor ?? x.valor ?? 0 };
     run(false); salvar();
   });
-  T.querySelectorAll('[data-nev]').forEach(i => i.onchange = () => { const l = S.lancamentos[i.dataset.nev]; if (!l?.dentistaId) return; l.valor = Math.max(0, +i.value || 0); run(false); salvar(); });
-  const grupo = k => (S.grupos || []).find(g => g.k === k);
-  const abrirSplitGrupo = async (k, base) => {
-    const g = grupo(k); const inf = S.result.infPorKey?.[k] || {};
-    const cur = S.decAtend[k]?.destino?.tipo === 'split' ? S.decAtend[k].destino.partes : Object.keys(inf).length >= 2 ? Object.keys(inf).map((id, i, a) => ({ dentistaId: id, pct: +(100 / a.length).toFixed(2) })) : [{ dentistaId: Object.keys(inf)[0] || '', pct: 50 }, { dentistaId: '', pct: 50 }];
-    const sis = g.lines.filter(l => !l.regra).reduce((a, l) => a + l.valor, 0);
-    const vals = Object.values(inf);
-    const r = await abrirSplit({ titulo: `Dividir o atendimento ${g.atend || [...g.guias].join(', ')}`, hint: `${g.paciente || ''} · escolha o percentual de cada dentista.`, total: base === 'informado' && vals.length ? Math.max(...vals) : sis, partes: cur, podeRemover: false });
-    if (!r) { renderPainel(); return; }
-    S.decAtend[k] = { ...(S.decAtend[k] || {}), destino: { tipo: 'split', partes: r.partes } };
-    run(false); salvar();
-  };
-  T.querySelectorAll('[data-gval]').forEach(x => x.onchange = () => { const k = x.dataset.gval; const d = { ...(S.decAtend[k] || {}) }; d.valor = x.value || undefined; if (!d.valor && !d.destino) delete S.decAtend[k]; else S.decAtend[k] = d; run(false); salvar(); });
-  T.querySelectorAll('[data-gdest]').forEach(x => x.onchange = () => {
-    const k = x.dataset.gdest;
-    if (x.value === '_split') { abrirSplitGrupo(k, S.decAtend[k]?.valor); return; }
-    const d = { ...(S.decAtend[k] || {}) }; d.destino = x.value ? { tipo: 'dentista', dentistaId: x.value } : undefined;
-    if (!d.valor && !d.destino) delete S.decAtend[k]; else S.decAtend[k] = d; run(false); salvar();
-  });
-  T.querySelectorAll('[data-gsplit]').forEach(b => b.onclick = () => abrirSplitGrupo(b.dataset.gsplit, S.decAtend[b.dataset.gsplit]?.valor));
-  T.querySelectorAll('[data-gclear]').forEach(b => b.onclick = () => { delete S.decAtend[b.dataset.gclear]; run(false); salvar(); toast('Decisão removida: o atendimento voltou para pendente'); });
-  T.querySelectorAll('select, input, button').forEach(el => el.addEventListener('click', e => e.stopPropagation()));
 }
+/* ===== ações em massa ===== */
+function analisarResp() {
+  const out = { aplicar: [], genericos: [], semCadastro: [], fora: [] };
+  (S.linhasConf || []).filter(o => o.st === 'divergencia' || (o.st === 'sem_exec' && !o.nInf)).forEach(o => {
+    const resp = o.resp.filter(r => !GENERIC.test(r));
+    if (!resp.length) { out.genericos.push(o); return; }
+    const d = resp.map(r => Core.matchDentist(r, ativos())).find(Boolean);
+    if (!d) { out.semCadastro.push(o); return; }
+    if (o.st === 'sem_exec' || o.infIds.includes(d.id)) out.aplicar.push([o, d]); else out.fora.push(o);
+  });
+  return out;
+}
+$('#btnAutoResp').onclick = async () => {
+  if (S.ro || !S.result) return;
+  const a = analisarResp();
+  const total = a.aplicar.length + a.genericos.length + a.semCadastro.length + a.fora.length;
+  if (!total) { toast('Nenhuma divergência para resolver.'); return; }
+  const txt = `Das ${n0(total)} guia(s) com divergência ou sem executor:` +
+    `\n✓ ${n0(a.aplicar.length)} vão para o dentista do "Resp. no sistema" (valor do sistema)` +
+    (a.genericos.length ? `\n⚠ ${n0(a.genericos.length)} ficam pendentes: Resp. genérico (Clínico Geral, Sem Dentista…)` : '') +
+    (a.semCadastro.length ? `\n⚠ ${n0(a.semCadastro.length)} ficam pendentes: Resp. no sistema não está cadastrado` : '') +
+    (a.fora.length ? `\n⚠ ${n0(a.fora.length)} ficam pendentes: Resp. no sistema não está entre os dentistas que informaram` : '') +
+    `\n\nConsultas continuam com a regra (CLINICA). Dá para desfazer.`;
+  if (!a.aplicar.length) { await dialog('Nada a associar automaticamente', txt, { okText: 'Entendi' }); return; }
+  if (!await dialog('Associar pelo Resp. no sistema?', txt, { okText: `Associar ${n0(a.aplicar.length)} guia(s)` })) return;
+  a.aplicar.forEach(([o, d]) => { S.decGuia[o.k] = { valor: 'sistema', destino: { tipo: 'dentista', dentistaId: d.id } }; S.decGuiaAuto[o.k] = true; });
+  run(false); salvar(); toast(`${n0(a.aplicar.length)} guia(s) associadas · ${n0(total - a.aplicar.length)} continuam pendentes`);
+};
+$('#btnAutoRespUndo').onclick = async () => {
+  const ks = Object.keys(S.decGuiaAuto);
+  if (!ks.length) { toast('Não há associações automáticas para desfazer.'); return; }
+  if (!await dialog('Desfazer associação automática?', `${n0(ks.length)} guia(s) voltam a ficar pendentes. Decisões manuais não são afetadas.`, { okText: 'Desfazer' })) return;
+  ks.forEach(k => { delete S.decGuia[k]; delete S.decGuiaAuto[k]; });
+  run(false); salvar(); toast('Associação automática desfeita');
+};
+function renderAutoResp() {
+  const n = (S.linhasConf || []).filter(o => o.st === 'divergencia' || (o.st === 'sem_exec' && !o.nInf)).length;
+  const u = Object.keys(S.decGuiaAuto).length;
+  $('#btnAutoResp').innerHTML = `⚡ Associar pelo Resp. no sistema${n ? ` <span class="cnt" style="background:var(--warnSoft);color:var(--warn)">${n0(n)}</span>` : ''}`;
+  $('#btnAutoResp').disabled = S.ro || !n;
+  $('#btnAutoRespUndo').classList.toggle('hide', !u || S.ro);
+  $('#btnAutoRespUndo').textContent = `Desfazer (${n0(u)})`;
+}
+function bulkDiv(valor) {
+  if (S.ro) return;
+  let n = 0;
+  linhasFiltradas(S.linhasConf || []).filter(o => o.st === 'diferenca' && o.nInf === 1).forEach(o => { S.decGuia[o.k] = { valor, destino: { tipo: 'dentista', dentistaId: o.infIds[0] } }; n++; });
+  if (!n) { toast('Nenhuma diferença de valor com um único dentista.'); return; }
+  run(false); salvar(); toast(`${n} guia(s) resolvidas: valor ${valor === 'informado' ? 'informado' : 'do sistema'} para quem informou. Divergências (2+ dentistas) ficam para decidir.`);
+}
+$('#bulkSis').onclick = () => bulkDiv('sistema');
+$('#bulkInf').onclick = () => bulkDiv('informado');
 $('#bulkNE').onclick = () => {
   if (S.ro) return;
   let n = 0; S.result.naoEncontradas.forEach(x => { if (!S.lancamentos[x.id] && x.informanteId) { S.lancamentos[x.id] = { dentistaId: x.informanteId, valor: x.valor ?? 0 }; n++; } });
   if (!n) { toast('Nenhum lançamento não localizado pendente.'); return; }
   run(false); salvar(); toast(`${n} lançamento(s) atribuído(s) a quem informou`);
 };
-function bulkDiv(decisao) {
-  if (S.ro) return;
-  const alvo = gruposFiltrados(S.grupos || buildGrupos()).filter(g => g.st === 'diferenca' && !g.decidido);
-  let n = 0, multi = 0;
-  alvo.forEach(g => {
-    const inf = Object.keys(S.result.infPorKey?.[g.k] || {});
-    if (inf.length !== 1) { multi++; return; }
-    S.decAtend[g.k] = { valor: decisao, destino: { tipo: 'dentista', dentistaId: inf[0] } }; n++;
-  });
-  if (!n) { toast(multi ? `Nenhuma decidida: ${multi} atendimento(s) têm mais de um dentista e precisam de decisão individual.` : 'Nenhuma diferença pendente.'); return; }
-  run(false); salvar();
-  toast(`${n} atendimento(s) decidido(s): ${decisao === 'informado' ? 'valor informado' : 'valor do sistema'} para quem informou${multi ? ` · ${multi} com 2+ dentistas ficaram para decidir` : ''}`);
-}
-$('#bulkSis').onclick = () => bulkDiv('sistema');
-$('#bulkInf').onclick = () => bulkDiv('informado');
 
 /* ===================== divisão entre dentistas ===================== */
 const partesTxt = partes => (partes || []).filter(p => p.dentistaId).map(p => `${dentById(p.dentistaId)?.nome || '?'} ${String(Math.round(p.pct * 100) / 100).replace('.', ',')}%`).join(' · ');

@@ -284,7 +284,7 @@ const Core = (() => {
       if (!k) return;
       (infPorKey[k] = infPorKey[k] || {})[f.dentistaId] = (infPorKey[k][f.dentistaId] || 0) + (it.valor || 0);
     }));
-    const decOk = d => d && (d.valor === 'sistema' || d.valor === 'informado') && d.destino && ((d.destino.tipo === 'dentista' && d.destino.dentistaId) || (d.destino.tipo === 'split' && partesOk(d.destino.partes)));
+    const decOk = d => d && (!d.valor || d.valor === 'sistema' || d.valor === 'informado') && d.destino && ((d.destino.tipo === 'dentista' && d.destino.dentistaId) || (d.destino.tipo === 'split' && partesOk(d.destino.partes)));
     files.forEach(f => {
       if (!f.temValor) return;
       const inf = new Map();
@@ -338,7 +338,8 @@ const Core = (() => {
     const tiraSplitExtras = ids => { for (let i = extras.length - 1; i >= 0; i--) if (extras[i].tipo === 'split' && ids.has(extras[i].linhaId)) extras.splice(i, 1); };
     Object.entries(decAtend).forEach(([k, dec]) => {
       if (!decOk(dec)) return;
-      const L = linhas.filter(l => keyLinha(l) === k && !l.pend && !l.regra);
+      const kk = k.slice(2), tp = k[0];
+      const L = linhas.filter(l => !l.pend && (tp === 'g' ? l.guia === kk && !l.regra : tp === 'r' ? l.guia === kk && l.regra : keyLinha(l) === k && !l.regra));
       if (!L.length && dec.valor === 'sistema') return;
       tiraSplitExtras(new Set(L.map(l => l.id)));
       const ds = dec.destino;
@@ -348,7 +349,7 @@ const Core = (() => {
       if (dec.valor === 'informado') {
         const inf = infPorKey[k] || {};
         const vals = Object.values(inf);
-        const alvo = ds.tipo === 'dentista' && inf[ds.dentistaId] != null ? inf[ds.dentistaId] : (vals.length ? Math.max(...vals) : 0);
+        const alvo = dec.alvo != null ? +dec.alvo : ds.tipo === 'dentista' && inf[ds.dentistaId] != null ? inf[ds.dentistaId] : (vals.length ? Math.max(...vals) : 0);
         const dif = alvo - L.reduce((a, l) => a + l.valor, 0);
         const L0 = L[0] || {};
         if (Math.abs(dif) > 0.004) {
