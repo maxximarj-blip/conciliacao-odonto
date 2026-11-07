@@ -17,9 +17,9 @@
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Manrope,system-ui,sans-serif;font-size:14px;-webkit-font-smoothing:antialiased}
 body{overflow-x:hidden}
 button,input,select{font:inherit;color:inherit}
-.wrap{max-width:1320px;margin:0 auto;padding:0 20px 60px}
+.wrap{max-width:1680px;margin:0 auto;padding:0 20px 60px}
 header.top{background:var(--ink);color:#fff;position:sticky;top:0;z-index:20}
-header .bar{max-width:1360px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;flex-wrap:nowrap}
+header .bar{max-width:1720px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:14px;flex-wrap:nowrap}
 .logo{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.01em}
 .logo .mk{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#19a596,#0e6b63);display:grid;place-items:center}
 .logo small{display:block;font-weight:500;color:#9fc3bd;font-size:11px;letter-spacing:.04em;text-transform:uppercase}
@@ -56,7 +56,7 @@ h1{font-size:22px;letter-spacing:-.02em;margin:26px 0 4px}
 .meta{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,.8fr) minmax(0,1.2fr) minmax(0,1.6fr);gap:10px;margin-top:14px}
 .meta div{background:var(--line2);border-radius:9px;padding:9px 11px;min-width:0}
 .meta span{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
-.meta b{font-family:var(--mono);font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.meta b{font-family:var(--mono);font-size:14px;font-weight:600;overflow-wrap:anywhere;display:block}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:20px;background:var(--line2);font-size:12px;color:var(--ink2);border:1px solid transparent}
 .chip.ok{background:var(--okSoft);color:var(--ok)}
@@ -73,8 +73,14 @@ details.map summary{cursor:pointer;color:var(--brand);font-weight:600;font-size:
 .mapgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:10px}
 /* tabelas sem rolagem lateral */
 table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
-.t th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left;padding:8px 8px;border-bottom:1px solid var(--line);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#fff;position:sticky;top:56px}
-.t td{padding:8px 8px;border-bottom:1px solid var(--line2);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.t th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left;padding:8px 8px;border-bottom:1px solid var(--line);font-weight:700;white-space:normal;line-height:1.25;background:#fff;position:sticky;top:56px;vertical-align:bottom}
+.t td{padding:8px 8px;border-bottom:1px solid var(--line2);vertical-align:middle;white-space:normal;overflow-wrap:anywhere;line-height:1.3}
+.t td.num{overflow-wrap:normal;white-space:nowrap}
+.fsel{position:relative;display:block;border:1px solid var(--line);border-radius:9px;background:#fff;padding:6px 24px 6px 9px;font-size:12.5px;line-height:1.25;cursor:pointer;min-height:32px;overflow-wrap:normal;word-break:normal}
+.fsel::after{content:"▾";position:absolute;right:8px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px}
+.fsel.warn{border-color:var(--warn)}
+.fsel.dis{opacity:.6;cursor:default}
+.fsel select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;margin:0}
 .t tr:hover td{background:#f8fbfa}
 .t .num{text-align:right;font-family:var(--mono);font-size:12.5px}
 .t td.wrap{white-space:normal;line-height:1.3}
@@ -101,7 +107,7 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
 @media(max-width:1100px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;min-width:0}
 .kpi span{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700}
-.kpi b{display:block;font-size:20px;font-family:var(--mono);font-weight:600;margin-top:6px;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi b{display:block;font-size:20px;font-family:var(--mono);font-weight:600;margin-top:6px;letter-spacing:-.02em;overflow-wrap:anywhere}
 .kpi small{color:var(--ink2);font-size:12px}
 .kpi.hl{background:var(--ink);border-color:var(--ink);color:#fff}
 .kpi.hl span{color:#9fc3bd}.kpi.hl small{color:#bfd6d2}
@@ -120,8 +126,8 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
 @media(max-width:1000px){.formgrid{grid-template-columns:1fr 1fr}}
 .rules{margin:2px 0 0;padding-left:18px;color:var(--ink2);font-size:12.5px;line-height:1.55}
 .t td.two{white-space:normal;line-height:1.25}
-.t td.two small{display:block;color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.t td.two .l{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.t td.two small{display:block;color:var(--muted);font-size:11px}
+.t td.two .l{display:block}
 .st{font-size:11px;font-weight:700}
 .notice{border-radius:10px;padding:10px 12px;font-size:13px;margin-top:12px}
 .notice.warn{background:var(--warnSoft);color:#7a4f0f}
@@ -171,7 +177,7 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
     <button data-tab="esp">Especialidades</button>
     <button data-tab="hist">Histórico</button>
   </nav>
-  <div class="user" title="versão 2026.11.07-1"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
+  <div class="user" title="versão 2026.11.07-2"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
 </div></header>
 
 <div class="wrap">
@@ -327,7 +333,7 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
     <label class="fld"><span>E-mail</span><input class="inp" id="lgEmail" type="email" autocomplete="username" required></label>
     <label class="fld" style="margin-top:10px"><span>Senha</span><input class="inp" id="lgSenha" type="password" autocomplete="current-password" required></label>
     <button class="btn pri" style="width:100%;justify-content:center;margin-top:16px" id="lgBtn">Entrar</button>
-    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.07-1</p>
+    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.07-2</p>
     <p class="muted" id="lgMsg" style="font-size:12.5px;min-height:18px;margin:10px 0 0"></p>
     <div class="lg-links"><a href="#" id="lnkAcesso">Solicitar acesso</a><span>·</span><a href="#" id="lnkSenha">Esqueci minha senha</a></div>
   </form>
@@ -377,8 +383,8 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
 
 <script src="js/vendor/xlsx.full.min.js"></script>
 <script src="js/vendor/supabase.js"></script>
-<script src="js/config.js?v=2026.11.07-1"></script>
-<script src="js/core.js?v=2026.11.07-1"></script>
-<script src="js/app.js?v=2026.11.07-1"></script>
+<script src="js/config.js?v=2026.11.07-2"></script>
+<script src="js/core.js?v=2026.11.07-2"></script>
+<script src="js/app.js?v=2026.11.07-2"></script>
 </body>
 </html>
