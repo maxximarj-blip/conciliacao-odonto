@@ -343,6 +343,38 @@ revoke all on public.comissoes_vigentes from anon;
 grant select on public.comissoes_vigentes to authenticated;
 
 -- ---------------------------------------------------------------------
+-- Regras automáticas por procedimento (ex.: "Consulta Odontológica" → CLINICA)
+-- Têm prioridade sobre o cruzamento das planilhas; só a troca manual na linha vale por cima.
+-- ---------------------------------------------------------------------
+create table if not exists public.regras_procedimento (
+  id             uuid primary key default gen_random_uuid(),
+  termo          text not null check (char_length(trim(termo)) between 2 and 120),
+  dentista_id    uuid not null references public.dentistas(id),
+  ativo          boolean not null default true,
+  criado_em      timestamptz not null default now(),
+  atualizado_em  timestamptz not null default now(),
+  atualizado_por uuid default auth.uid()
+);
+drop trigger if exists aud_regras_procedimento on public.regras_procedimento;
+create trigger aud_regras_procedimento before insert or update on public.regras_procedimento for each row execute function public.tg_auditoria();
+alter table public.regras_procedimento enable row level security;
+drop policy if exists ler_regras_procedimento on public.regras_procedimento;
+create policy ler_regras_procedimento on public.regras_procedimento for select to authenticated using (true);
+drop policy if exists inserir_regras_procedimento on public.regras_procedimento;
+create policy inserir_regras_procedimento on public.regras_procedimento for insert to authenticated with check (true);
+drop policy if exists alterar_regras_procedimento on public.regras_procedimento;
+create policy alterar_regras_procedimento on public.regras_procedimento for update to authenticated using (true) with check (true);
+revoke all on public.regras_procedimento from anon;
+revoke delete on public.regras_procedimento from authenticated;
+
+-- regra inicial: Consulta Odontológica → dentista "CLINICA" (se ele existir e ainda não houver regras)
+insert into public.regras_procedimento (termo, dentista_id)
+select 'Consulta Odontológica', d.id from public.dentistas d
+where upper(trim(d.nome)) in ('CLINICA','CLÍNICA') and d.ativo
+  and not exists (select 1 from public.regras_procedimento)
+limit 1;
+
+-- ---------------------------------------------------------------------
 -- Solicitações da tela de login (acesso / esqueci minha senha)
 -- Qualquer pessoa pode ENVIAR; só admin vê e atende.
 -- ---------------------------------------------------------------------
@@ -399,6 +431,33 @@ drop policy if exists planilhas_ler on storage.objects;
 create policy planilhas_ler on storage.objects for select to authenticated using (bucket_id = 'planilhas');
 drop policy if exists planilhas_enviar on storage.objects;
 create policy planilhas_enviar on storage.objects for insert to authenticated with check (bucket_id = 'planilhas');
+
+-- ---------------------------------------------------------------------
+-- Apagar bases (botão no Histórico, só admin)
+-- ---------------------------------------------------------------------
+create or replace function public.apagar_bases(p_dentistas boolean, p_auditoria boolean, p_confirmacao text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_paths text[]; v_conc int; v_dent int := 0;
+begin
+  if not public.eh_admin() then raise exception 'Apenas administradores podem apagar as bases.'; end if;
+  if coalesce(upper(trim(p_confirmacao)), '') <> 'APAGAR' then raise exception 'Digite APAGAR para confirmar.'; end if;
+  select coalesce(array_agg(storage_path), '{}') into v_paths from public.conciliacao_arquivos;
+  select count(*) into v_conc from public.conciliacoes;
+  truncate table public.comissoes_fechadas, public.conciliacao_versoes, public.conciliacao_arquivos, public.conciliacoes restart identity cascade;
+  if p_dentistas then
+    delete from public.regras_procedimento r using public.dentistas d where d.id = r.dentista_id and upper(d.nome) <> 'CLINICA';
+    delete from public.dentistas where upper(nome) <> 'CLINICA';
+    get diagnostics v_dent = row_count;
+  end if;
+  if p_auditoria then truncate table public.auditoria restart identity; end if;
+  return jsonb_build_object('competencias', v_conc, 'dentistas', v_dent, 'arquivos', v_paths);
+end $$;
+revoke all on function public.apagar_bases(boolean, boolean, text) from public, anon;
+grant execute on function public.apagar_bases(boolean, boolean, text) to authenticated;
+
+-- admin pode apagar as planilhas guardadas no Storage
+drop policy if exists planilhas_apagar on storage.objects;
+create policy planilhas_apagar on storage.objects for delete to authenticated using (bucket_id = 'planilhas' and public.eh_admin());
 
 -- ---------------------------------------------------------------------
 -- Especialidades padrão (só na primeira vez)

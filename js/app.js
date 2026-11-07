@@ -1121,7 +1121,32 @@ function renderEsp() {
 $('#eAdd').onclick = async () => { try { await q(sb.from('especialidades').insert({ nome: 'Nova especialidade', forma: 'percentual', valor: 0 }), 'Especialidade'); await cadChanged(); } catch (e) { fail(e); } };
 
 /* ===================== histórico ===================== */
+$('#btnApagar').onclick = async () => {
+  if (S.perfil?.papel !== 'admin') { toast('Apenas administradores.'); return; }
+  const dent = $('#apDent').checked, aud = $('#apAud').checked;
+  const itens = ['todas as competências, versões, comissões fechadas e pagamentos', 'as planilhas guardadas'];
+  if (dent) itens.push('os dentistas cadastrados (menos CLINICA) e as regras deles');
+  if (aud) itens.push('a auditoria');
+  const conf = await dialog('Apagar bases?', `Isso apaga ${itens.join(', ')}.\nNão tem como desfazer.\n\nDigite APAGAR para confirmar.`, { input: true, placeholder: 'APAGAR', okText: 'Apagar tudo', required: true });
+  if (conf === null) return;
+  if (conf.trim().toUpperCase() !== 'APAGAR') { toast('Confirmação incorreta. Nada foi apagado.'); return; }
+  const b = $('#btnApagar'); b.disabled = true; b.textContent = 'Apagando…';
+  try {
+    clearTimeout(saveTimer);
+    const r = await q(sb.rpc('apagar_bases', { p_dentistas: dent, p_auditoria: aud, p_confirmacao: conf }), 'Apagar bases');
+    const paths = r?.arquivos || [];
+    let falhou = 0;
+    for (let i = 0; i < paths.length; i += 500) {
+      const { error } = await sb.storage.from(BUCKET).remove(paths.slice(i, i + 500));
+      if (error) falhou += Math.min(500, paths.length - i);
+    }
+    S.conc = null;
+    await dialog('Bases apagadas', `${r.competencias} competência(s) e ${paths.length - falhou} planilha(s) apagadas${dent ? `, ${r.dentistas} dentista(s)` : ''}${aud ? ', auditoria zerada' : ''}.${falhou ? `\n⚠ ${falhou} planilha(s) não saíram do Storage (apague no painel do Supabase se quiser).` : ''}\n\nA tela vai recarregar para começar do zero.`, { okText: 'OK' });
+    location.reload();
+  } catch (e) { fail(e); b.disabled = false; b.textContent = 'Apagar bases…'; }
+};
 async function loadHistorico() {
+  $('#cardApagar').classList.toggle('hide', S.perfil?.papel !== 'admin');
   try {
     const [concs, vig] = await Promise.all([
       q(sb.from('conciliacoes').select('id,competencia,status,versao,totais,arquivo_sistema,atualizado_em,fechada_em').order('competencia', { ascending: false }), 'Histórico'),
