@@ -120,7 +120,7 @@ Comissão: **percentual** sobre a base (situações marcadas), **diária fixa** 
 ---
 
 ## Conferência por atendimento (Resultado)
-Painel único: cada linha é um atendimento com as linhas do sistema (executor de cada procedimento), o que cada dentista informou e a diferença. Clique para abrir e decidir (executor da linha, dividir guia, decisão da diferença, não localizados). A situação de cada atendimento pode ser: Conflito, Diferença, Sem executor, Não localizado, Conciliado, Só no sistema ou Pendente. O filtro **"⚠ Precisa de ação"** mostra o que falta decidir.
+Painel único: cada linha é um atendimento com as linhas do sistema (executor de cada procedimento), o que cada dentista informou e a diferença. Clique para abrir e decidir. Quando o valor não bate, aparece **Diferença de valor** (com ⚠ se 2+ dentistas informaram a guia) e dois seletores: **qual valor vale** (informado pelo dentista ou do sistema) e **para quem vai** (dividir entre dentistas ou associar tudo a um dentista). Depois de decidido, o atendimento sai das pendências. A situação de cada atendimento pode ser: Conflito, Diferença, Sem executor, Não localizado, Conciliado, Só no sistema ou Pendente. O filtro **"⚠ Precisa de ação"** mostra o que falta decidir.
 
 O **filtro de dentista** e a **busca** no topo do Resultado valem para todas as tabelas: comissão, painel e guias pendentes.
 

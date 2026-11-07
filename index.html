@@ -89,6 +89,8 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
 .gsec{margin:10px 0 6px;font-size:12.5px}.ginf{font-size:12.5px;line-height:1.6}
 .gdiv{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:8px 10px;margin-top:8px;font-size:12.5px;flex-wrap:wrap}
 .t.sub th{position:static;background:transparent;font-size:10.5px}.t.sub td{padding:5px 8px;background:#fff}
+.gdec{background:#fff;border:1px solid #f0c9c4;border-radius:10px;padding:10px 12px;margin-top:10px;font-size:12.5px}.gdec.ok{border-color:#b9e2cd}
+.gdec-h{font-size:13px}.gwarn{margin-top:6px;color:#7a4f0f;background:var(--warnSoft);border-radius:7px;padding:5px 8px}.gres{margin-top:8px;color:var(--ink2)}
 .tag.split{background:#e8f0fb;color:#2f6fb0}
 .tag.dentista{background:var(--okSoft);color:var(--ok)}
 .tag.sistema{background:var(--infoSoft);color:var(--info)}
@@ -169,7 +171,7 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
     <button data-tab="esp">Especialidades</button>
     <button data-tab="hist">Histórico</button>
   </nav>
-  <div class="user" title="versão 2026.11.06-9"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
+  <div class="user" title="versão 2026.11.06-10"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
 </div></header>
 
 <div class="wrap">
@@ -236,7 +238,7 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
         <button class="btn sm ghost hide" id="btnAutoRespUndo"></button><button class="btn sm" id="btnAutoResp" title="Resolve conflitos usando o dentista do Resp. no sistema (quando ele é um dos que informaram a guia)">⚡ Associar pelo Resp. no sistema</button></div>
       <p class="hint">Cada linha é um atendimento: as linhas do sistema (com o executor de cada procedimento), o que cada dentista informou e a diferença. Clique para abrir e decidir. Guias pendentes em aberto ficam na aba <b>Guias pendentes</b>.</p>
       <div class="filters"><div class="seg" id="segPainel"></div><span class="sp"></span>
-        <span class="muted" style="font-size:12px">Diferenças pendentes:</span><button class="btn sm" id="bulkSis">Manter sistema em todas</button><button class="btn sm" id="bulkInf">Usar valor informado em todas</button><button class="btn sm" id="bulkNE" title="Não localizados no sistema">Não localizados → quem informou</button></div>
+        <span class="muted" style="font-size:12px">Diferenças pendentes:</span><button class="btn sm" id="bulkSis" title="Só atendimentos com um dentista informante">Acatar sistema em todas</button><button class="btn sm" id="bulkInf" title="Só atendimentos com um dentista informante">Acatar informado em todas</button><button class="btn sm" id="bulkNE" title="Não localizados no sistema">Não localizados → quem informou</button></div>
       <table class="t" id="tblPainel"></table>
       <div class="pager" id="pagerPainel"></div>
     </div>
@@ -317,7 +319,7 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
     <label class="fld"><span>E-mail</span><input class="inp" id="lgEmail" type="email" autocomplete="username" required></label>
     <label class="fld" style="margin-top:10px"><span>Senha</span><input class="inp" id="lgSenha" type="password" autocomplete="current-password" required></label>
     <button class="btn pri" style="width:100%;justify-content:center;margin-top:16px" id="lgBtn">Entrar</button>
-    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.06-9</p>
+    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.06-10</p>
     <p class="muted" id="lgMsg" style="font-size:12.5px;min-height:18px;margin:10px 0 0"></p>
     <div class="lg-links"><a href="#" id="lnkAcesso">Solicitar acesso</a><span>·</span><a href="#" id="lnkSenha">Esqueci minha senha</a></div>
   </form>
@@ -367,8 +369,8 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
 
 <script src="js/vendor/xlsx.full.min.js"></script>
 <script src="js/vendor/supabase.js"></script>
-<script src="js/config.js?v=2026.11.06-9"></script>
-<script src="js/core.js?v=2026.11.06-9"></script>
-<script src="js/app.js?v=2026.11.06-9"></script>
+<script src="js/config.js?v=2026.11.06-10"></script>
+<script src="js/core.js?v=2026.11.06-10"></script>
+<script src="js/app.js?v=2026.11.06-10"></script>
 </body>
 </html>

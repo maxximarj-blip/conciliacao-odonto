@@ -202,7 +202,7 @@ const Core = (() => {
         Se não bater, fica pendente na divergência para o usuário decidir.
      4) Sem nenhuma planilha → usa o dentista do sistema, se estiver cadastrado.
      5) Decisões do usuário: resoluções de divergência, lançamentos não localizados e troca linha a linha. */
-  function reconcile({ systemRows, dentistFiles, dentistas, especialidades, situacoesBase, overrides = {}, diariasOverride = {}, resolucoes = {}, lancamentos = {}, splits = {}, regrasProc = [], aprovadas = {}, tolAtend = 1, tolDiv = 1 }) {
+  function reconcile({ systemRows, dentistFiles, dentistas, especialidades, situacoesBase, overrides = {}, diariasOverride = {}, resolucoes = {}, lancamentos = {}, splits = {}, regrasProc = [], aprovadas = {}, decAtend = {}, tolAtend = 1, tolDiv = 1 }) {
     const byId = Object.fromEntries(dentistas.map(d => [d.id, d]));
     const files = dentistFiles.filter(f => f.dentistaId);
     const add = (m, k, v) => { if (!m.has(k)) m.set(k, new Set()); m.get(k).add(v); };
@@ -276,6 +276,15 @@ const Core = (() => {
     // ---- etapa 3: divergências (sobre a atribuição já com as decisões linha a linha)
     const divergencias = [];
     const keyLinha = l => l.atendimento ? 'a:' + l.atendimento : 'g:' + l.guia;
+    const infPorKey = {}; // key -> { dentistaId: valor informado }
+    files.forEach(f => (f.itens || []).forEach(it => {
+      let k = null;
+      if (it.guia && sysGuias.has(it.guia)) k = guiaAt.has(it.guia) ? 'a:' + guiaAt.get(it.guia) : 'g:' + it.guia;
+      else if (it.atend && sysAt.has(it.atend)) k = 'a:' + it.atend;
+      if (!k) return;
+      (infPorKey[k] = infPorKey[k] || {})[f.dentistaId] = (infPorKey[k][f.dentistaId] || 0) + (it.valor || 0);
+    }));
+    const decOk = d => d && (d.valor === 'sistema' || d.valor === 'informado') && d.destino && ((d.destino.tipo === 'dentista' && d.destino.dentistaId) || (d.destino.tipo === 'split' && partesOk(d.destino.partes)));
     files.forEach(f => {
       if (!f.temValor) return;
       const inf = new Map();
@@ -308,7 +317,9 @@ const Core = (() => {
     divergencias.sort((a, b) => Math.abs(b.dif) - Math.abs(a.dif));
 
     // ---- etapa 4: decisões das divergências (troca manual na linha continua valendo por cima)
+    divergencias.forEach(d => { if (decOk(decAtend[d.key])) d.decididaAtend = true; });
     divergencias.forEach(d => {
+      if (d.decididaAtend) return;
       const r = d.resolucao; if (!r || !r.decisao || r.decisao === 'pendente') return;
       const ids = d.linhaIds.filter(i => !linhas[i].temOverride);
       if (r.decisao === 'split') {
@@ -322,6 +333,29 @@ const Core = (() => {
       const alvo = r.dentistaId || null;
       ids.forEach(i => { const l = linhas[i]; l.executorId = alvo; l.origem = alvo ? 'manual' : 'nao_identificado'; l.atPendente = null; l.alerta = 'Definido na divergência de valor'; });
       if (alvo && r.decisao === 'informado' && Math.abs(d.dif) > 0.004) extras.push({ tipo: 'ajuste', dentistaId: alvo, valor: d.dif, data: d.data || null, key: d.key, ref: d.atendimento || d.guia, paciente: d.paciente, descricao: 'Ajuste p/ valor informado' });
+    });
+    // ---- etapa 5: decisão por atendimento (valor: sistema/informado · destino: um dentista ou divisão)
+    const tiraSplitExtras = ids => { for (let i = extras.length - 1; i >= 0; i--) if (extras[i].tipo === 'split' && ids.has(extras[i].linhaId)) extras.splice(i, 1); };
+    Object.entries(decAtend).forEach(([k, dec]) => {
+      if (!decOk(dec)) return;
+      const L = linhas.filter(l => keyLinha(l) === k && !l.pend && !l.regra);
+      if (!L.length && dec.valor === 'sistema') return;
+      tiraSplitExtras(new Set(L.map(l => l.id)));
+      const ds = dec.destino;
+      L.forEach(l => { l.split = null; l.splitInformado = false; l.decGrupo = true; l.atPendente = null;
+        if (ds.tipo === 'dentista') { l.executorId = ds.dentistaId; l.origem = 'manual'; l.alerta = 'Definido na decisão do atendimento'; }
+        else dividirLinha(l, ds.partes, 'Atendimento dividido'); });
+      if (dec.valor === 'informado') {
+        const inf = infPorKey[k] || {};
+        const vals = Object.values(inf);
+        const alvo = ds.tipo === 'dentista' && inf[ds.dentistaId] != null ? inf[ds.dentistaId] : (vals.length ? Math.max(...vals) : 0);
+        const dif = alvo - L.reduce((a, l) => a + l.valor, 0);
+        const L0 = L[0] || {};
+        if (Math.abs(dif) > 0.004) {
+          const destinos = ds.tipo === 'dentista' ? [{ dentistaId: ds.dentistaId, pct: 100 }] : ds.partes.filter(p => p.dentistaId && p.pct > 0);
+          destinos.forEach(p => extras.push({ tipo: 'ajuste', dentistaId: p.dentistaId, valor: dif * p.pct / 100, data: L0.data || null, key: k, ref: L0.atendimento || L0.guiaRaw || k.slice(2), paciente: L0.paciente, descricao: `Ajuste p/ valor informado${destinos.length > 1 ? ` (${p.pct}%)` : ''}` }));
+        }
+      }
     });
     linhas.forEach(l => { l.comissionavel = !l.pend && inBase(l) && !!l.executorId; });
     const mov = linhas.filter(l => !l.pend);
@@ -368,7 +402,7 @@ const Core = (() => {
       return { dentistaId: d.id, nome: d.nome, especialidade: esp?.nome || '—', forma, valorRef, guias: s.guias.size, procs: s.procs, producao: s.producao, base: s.base, ajustes: s.ajustes, divididas: s.divididas, pendente: s.pendente, diarias, diariasCalc, comissao };
     }).sort((a, b) => b.producao - a.producao);
 
-    const divPend = divergencias.filter(d => !d.resolucao || d.resolucao.decisao === 'pendente').length;
+    const divPend = new Set(divergencias.filter(d => !d.decididaAtend && (!d.resolucao || d.resolucao.decisao === 'pendente')).map(d => d.key)).size;
     const tot = {
       linhas: mov.length, guias: new Set(mov.map(l => l.guia)).size,
       producao: mov.reduce((a, l) => a + l.valor, 0),
@@ -393,7 +427,7 @@ const Core = (() => {
     const abertas = pendentes.filter(l => l.pend), aprov = pendentes.filter(l => l.aprovado);
     tot.pendentesQtd = abertas.length; tot.pendentesValor = abertas.reduce((a, l) => a + l.valor, 0);
     tot.aprovadasQtd = aprov.length; tot.aprovadasValor = aprov.reduce((a, l) => a + l.valor, 0);
-    return { linhas: mov, resumo: resumoArr, naoEncontradas, divergencias, extras, pendentes, tot };
+    return { linhas: mov, resumo: resumoArr, naoEncontradas, divergencias, extras, pendentes, infPorKey, tot };
   }
 
 
