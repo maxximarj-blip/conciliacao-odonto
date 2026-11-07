@@ -933,10 +933,11 @@ function renderPend() {
   $('#pBulk').disabled = S.ro || !aprovaveis.length;
   const PG = 50, pages = Math.max(1, Math.ceil(list.length / PG)); if (V.page >= pages) V.page = pages - 1;
   const sl = list.slice(V.page * PG, (V.page + 1) * PG);
-  $('#tblPend').innerHTML = `<colgroup><col style="width:6%"><col style="width:10%"><col style="width:13%"><col style="width:14%"><col style="width:17%"><col style="width:17%"><col style="width:8%"><col style="width:15%"></colgroup>
-    <thead><tr><th>Data</th><th>Guia</th><th>Paciente</th><th>Procedimento</th><th>Executor</th><th>Motivo da pendência</th><th class="num">Valor</th><th style="text-align:right">Ação</th></tr></thead>
-    <tbody>${sl.length ? sl.map(l => { const ap = S.aprovadas[l.id]; return `<tr style="${l.aprovado ? 'background:var(--okSoft)' : ''}"><td class="mono" style="font-size:12px">${l.data ? l.data.toLocaleDateString('pt-BR').slice(0, 5) : '—'}</td>
-      <td class="mono" style="font-size:12px" title="atend. ${esc(l.atendimento)}">${esc(l.guiaRaw)}</td><td title="${esc(l.paciente)}">${esc(l.paciente || '—')}</td>
+  $('#tblPend').innerHTML = `<colgroup><col style="width:8%"><col style="width:12%"><col style="width:11%"><col style="width:15%"><col style="width:14%"><col style="width:17%"><col style="width:8%"><col style="width:15%"></colgroup>
+    <thead><tr><th>Guia</th><th>Paciente</th><th>Resp. no sistema</th><th>Procedimento</th><th>Executor</th><th>Motivo da pendência</th><th class="num">Valor</th><th style="text-align:right">Ação</th></tr></thead>
+    <tbody>${sl.length ? sl.map(l => { const ap = S.aprovadas[l.id]; return `<tr style="${l.aprovado ? 'background:var(--okSoft)' : ''}"><td class="two"><span class="l mono" style="font-size:12px">${esc(l.guiaRaw)}</span><small>${l.data ? l.data.toLocaleDateString('pt-BR').slice(0, 5) : ''}${l.atendimento ? ' · ' + esc(l.atendimento) : ''}</small></td>
+      <td>${esc(l.paciente || '—')}</td>
+      <td class="${!l.dentistaSistema || GENERIC.test(l.dentistaSistema) ? 'muted' : ''}">${esc(l.dentistaSistema || '—')}</td>
       <td title="${esc(l.procedimento)}">${esc(l.procedimento || '—')}</td>
       <td title="${esc(l.alerta || l.regraTxt || ORIG_LBL[l.origem] || '')}"><select class="inp" data-pov="${l.id}" ${S.ro ? 'disabled' : ''} style="${l.executorId || l.origem === 'split' ? '' : 'border-color:var(--warn)'}">${l.origem === 'split' ? `<option value="_cur" selected>÷ ${esc(partesTxt(l.split))}</option>` : ''}${dentOpts(l.executorId, '— sem executor —')}</select></td>
       <td class="two"><span class="l" title="${esc(l.obs)}">${esc(l.obs || '—')}</span><small>${esc(l.status || l.situacao)}</small></td><td class="num">${brl(l.valor)}</td>
