@@ -733,19 +733,20 @@ function renderPainel() {
   const PG = 50, pages = Math.max(1, Math.ceil(list.length / PG)); if (P.page >= pages) P.page = pages - 1;
   const sl = list.slice(P.page * PG, (P.page + 1) * PG);
   const infCell = o => (!o.nInf && o.viaAt) ? `<span class="muted" style="font-size:11px" title="Atendimento ${esc(o.lines[0]?.atendimento)}: informado ${brl(o.viaAt.inf)} nas guias ${esc(o.viaAt.guias.join(', '))}">pelo atendimento</span>` : !o.nInf ? '<span class="muted">—</span>' : o.infIds.map(id => `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(dentById(id)?.nome)}: ${esc((o.inf[id].procs || []).join('; '))}${o.inf[id].viaAt ? ' (informado pelo atendimento)' : ''}">${brl(o.inf[id].valor)} <span class="muted" style="font-family:Manrope;font-size:11px">${esc((dentById(id)?.nome || '?').replace(/^(Dra?\.?\s)/i, ''))}</span></div>`).join('');
-  $('#tblPainel').innerHTML = `<colgroup><col style="width:8%"><col style="width:16%"><col style="width:11%"><col style="width:15%"><col style="width:8%"><col style="width:13%"><col style="width:8%"><col style="width:9%"><col style="width:12%"></colgroup>
-    <thead><tr><th>Guia</th><th>Paciente / procedimento</th><th>Resp. no sistema</th><th>Executor</th><th class="num">Sistema</th><th class="num">Informado</th><th class="num">Dif.</th><th>Status</th><th>Valor a pagar</th></tr></thead>
+  $('#tblPainel').innerHTML = `<colgroup><col style="width:7%"><col style="width:12%"><col style="width:10%"><col style="width:14%"><col style="width:12%"><col style="width:7%"><col style="width:12%"><col style="width:8%"><col style="width:8%"><col style="width:10%"></colgroup>
+    <thead><tr><th>Guia</th><th>Paciente</th><th>Resp. no sistema</th><th>Procedimento</th><th>Executor</th><th class="num">Sistema</th><th class="num">Informado</th><th class="num">Dif.</th><th>Status</th><th>Valor a pagar</th></tr></thead>
     <tbody>${sl.length ? sl.map(o => `<tr>
       <td class="two"><span class="l mono" style="font-size:12px">${esc(o.guia)}</span><small>${o.data ? new Date(o.data).toLocaleDateString('pt-BR').slice(0, 5) : ''}${o.lines[0]?.atendimento ? ' · ' + esc(o.lines[0].atendimento) : ''}</small></td>
-      <td class="two"><span class="l" title="${esc(o.paciente)}">${esc(o.paciente || '—')}</span><small title="${esc(o.procs.join('; '))}">${esc(o.procs[0] || '—')}${o.procs.length > 1 ? ` <b>+${o.procs.length - 1}</b>` : ''}</small></td>
+      <td title="${esc(o.paciente)}">${esc(o.paciente || '—')}</td>
       <td title="${esc(o.resp.join(', '))}" class="${o.resp.every(r => GENERIC.test(r)) ? 'muted' : ''}">${esc(o.resp.join(', ') || '—')}</td>
+      <td class="${o.procs.length > 1 ? 'two' : ''}" title="${esc(o.procs.join('; '))}">${o.procs.length > 1 ? `<span class="l">${esc(o.procs[0])}</span><small>+ ${o.procs.length - 1}: ${esc(o.procs.slice(1).join('; '))}</small>` : esc(o.procs[0] || '—')}</td>
       <td>${execSelect(o)}</td>
       <td class="num">${o.ne ? '<span class="muted">—</span>' : brl(o.sis)}</td>
       <td class="num">${infCell(o)}</td>
       <td class="num" style="color:${!o.nInf || o.viaAt || Math.abs(o.dif) <= tolV() ? 'var(--muted)' : o.dif > 0 ? 'var(--bad)' : 'var(--info)'}">${o.viaAt ? `<span title="Bate pelo atendimento">≈ 0</span>` : o.nInf ? brl(o.dif) : '—'}</td>
       <td><span class="tag ${RST[o.st][1]}" title="${o.nInf >= 2 ? `${o.nInf} dentistas informaram a guia na produção` : o.viaAt ? `Conferido pelo atendimento ${o.lines[0]?.atendimento}: informado ${brl(o.viaAt.inf)} = sistema ${brl(o.viaAt.sis)} (guias ${o.viaAt.guias.join(', ')})` : ''}">${RST[o.st][0]}${o.viaAt ? '*' : ''}</span>${o.dec ? ` <button class="btn ghost sm" data-gu="${esc(o.k)}" title="Desfazer decisão" style="padding:2px 6px">↺</button>` : ''}</td>
-      <td>${valorSelect(o)}</td></tr>`).join('') : `<tr><td colspan="9" class="empty">${P.f === 'pend' ? '✓ Nenhuma pendência neste filtro.' : 'Nada neste filtro.'}</td></tr>`}</tbody>
-    <tfoot><tr><td colspan="4">${n0(list.length)} guia(s)</td><td class="num">${brl(list.reduce((a, o) => a + o.sis, 0))}</td><td class="num">${brl(list.reduce((a, o) => a + (o.maxInf || 0), 0))}</td><td></td><td></td><td></td></tr></tfoot>`;
+      <td>${valorSelect(o)}</td></tr>`).join('') : `<tr><td colspan="10" class="empty">${P.f === 'pend' ? '✓ Nenhuma pendência neste filtro.' : 'Nada neste filtro.'}</td></tr>`}</tbody>
+    <tfoot><tr><td colspan="5">${n0(list.length)} guia(s)</td><td class="num">${brl(list.reduce((a, o) => a + o.sis, 0))}</td><td class="num">${brl(list.reduce((a, o) => a + (o.maxInf || 0), 0))}</td><td></td><td></td><td></td></tr></tfoot>`;
   $('#pagerPainel').innerHTML = `<span>${n0(list.length)} guia(s)</span><span class="sp"></span><button class="btn sm" ${P.page ? '' : 'disabled'} data-pp="-1">‹</button><span>pág. ${P.page + 1} de ${pages}</span><button class="btn sm" ${P.page < pages - 1 ? '' : 'disabled'} data-pp="1">›</button>`;
   $('#pagerPainel').querySelectorAll('[data-pp]').forEach(b => b.onclick = () => { P.page += +b.dataset.pp; renderPainel(); });
   // KPI de pendências a partir da tabela
