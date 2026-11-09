@@ -529,6 +529,7 @@ function renderConferencia() {
   const tabs = [['todas', 'Todos', C.rows.length], ['ok', ST_LBL.ok, C.ok], ['dif', ST_LBL.dif, C.difs], ['so_sistema', ST_LBL.so_sistema, C.soSistema], ['outro', 'Apurado p/ outro', C.outro], ['pendente', 'Pendente', C.pendente], ['nao_localizado', 'Não localizado', C.naoLocalizado]].filter(t => t[0] === 'todas' || t[2]);
   $('#dmSeg').innerHTML = tabs.map(([kk, t, c]) => `<button class="${dmState.f === kk ? 'on' : ''}" data-dmf="${kk}">${t}<em>${c}</em></button>`).join('');
   $('#dmSeg').querySelectorAll('button').forEach(b => b.onclick = () => { dmState.f = b.dataset.dmf; renderConferencia(); });
+  dmState.C = C;
   const rows = C.rows.filter(r => dmState.f === 'todas' || r.status === dmState.f);
   $('#dmTbl').innerHTML = `<colgroup><col style="width:17%"><col style="width:13%"><col style="width:32%"><col style="width:9%"><col style="width:9%"><col style="width:8%"><col style="width:12%"></colgroup>
     <thead><tr><th>Atendimento / paciente</th><th>Guia(s)</th><th>Procedimentos (informado · apurado)</th><th class="num">Informado</th><th class="num">Apurado</th><th class="num">Dif.</th><th>Situação</th></tr></thead>
@@ -928,6 +929,7 @@ function renderPend() {
   const base = V.f === 'abertas' ? P : V.f === 'aprovadas' ? A : TODAS;
   const list = base.filter(l => (!V.dent || (V.dent === '_' ? !l.executorId && l.origem !== 'split' : l.executorId === V.dent || (l.split || []).some(p => p.dentistaId === V.dent)))
     && (!qq || Core.norm([l.guiaRaw, l.atendimento, l.paciente, l.procedimento, l.obs, l.dentistaSistema].join(' ')).includes(qq)));
+  S.pendExp = { list, eRows, mRows, f: V.f };
   const aprovaveis = list.filter(l => l.pend && (l.executorId || l.origem === 'split'));
   $('#pBulk').textContent = `✓ Aprovar pgto das filtradas com executor (${n0(aprovaveis.length)})`;
   $('#pBulk').disabled = S.ro || !aprovaveis.length;
@@ -972,6 +974,29 @@ function applyRO() {
 function renderAllConc() { applyRO(); renderSys(); renderSit(); renderDen(); checkReady(); renderResult(); renderSugestoes(); renderRegras(); applyRO(); }
 
 /* ===================== exportar ===================== */
+const nomeArq = t => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9_-]+/g, '_').replace(/_+/g, '_');
+const autoCols = rows => { const ks = Object.keys(rows[0] || {}); return ks.map(k => ({ wch: Math.min(60, Math.max(k.length, ...rows.map(r => String(r[k] ?? '').length)) + 2) })); };
+function abaXlsx(wb, rows, nome) { const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ '': 'Nada neste filtro' }]); ws['!cols'] = autoCols(rows); XLSX.utils.book_append_sheet(wb, ws, nome); }
+$('#pExport').onclick = () => {
+  const E = S.pendExp; if (!E) { toast('Nada para exportar.'); return; }
+  const wb = XLSX.utils.book_new();
+  abaXlsx(wb, E.list.map(l => ({ Data: l.data ? l.data.toLocaleDateString('pt-BR') : '', Guia: l.guiaRaw, Atendimento: l.atendimento, Paciente: l.paciente, 'Resp. no sistema': l.dentistaSistema, Procedimento: l.procedimento, Executor: execTxt(l), 'Motivo da pendência': l.obs || '', Status: l.status || l.situacao, Valor: +(+l.valor || 0).toFixed(2), 'Pgto aprovado': l.aprovado ? 'Sim' : 'Não', 'Aprovado em': S.aprovadas[l.id]?.em ? new Date(S.aprovadas[l.id].em).toLocaleString('pt-BR') : '', 'Aprovado por': S.aprovadas[l.id]?.por || '' })), 'Guias pendentes');
+  abaXlsx(wb, E.eRows.map(([k, o]) => ({ 'Executor (em aberto)': k === '_' ? '— sem executor —' : o.nome, Linhas: o.n, Valor: +o.v.toFixed(2) })), 'Por executor');
+  abaXlsx(wb, E.mRows.map(([k, o]) => ({ 'Motivo (em aberto)': k, Linhas: o.n, Valor: +o.v.toFixed(2) })), 'Por motivo');
+  XLSX.writeFile(wb, `Guias_pendentes_${nomeArq(compLabel(S.conc.competencia))}${E.f === 'abertas' ? '_em_aberto' : E.f === 'aprovadas' ? '_aprovadas' : ''}.xlsx`);
+};
+$('#dmExport').onclick = () => {
+  const C = dmState.C; if (!C) return;
+  const d = dentById(dmState.id), wb = XLSX.utils.book_new();
+  abaXlsx(wb, [
+    { Item: 'Dentista', Valor: d?.nome || '' }, { Item: 'Competência', Valor: compLabel(S.conc.competencia) },
+    { Item: 'Situação', Valor: !C.temPlanilha ? 'Sem planilha do dentista' : (C.difs + C.outro + C.naoLocalizado + C.soSistema + C.pendente === 0 ? 'Conciliado' : 'Não conciliado') },
+    { Item: 'Informado pelo dentista', Valor: +C.informado.toFixed(2) }, { Item: 'Apurado no sistema', Valor: +C.apurado.toFixed(2) }, { Item: 'Diferença', Valor: +C.dif.toFixed(2) },
+    { Item: 'Atendimentos conciliados', Valor: `${C.ok} de ${C.rows.length}` }, { Item: 'Com diferença', Valor: C.difs }, { Item: 'Só no sistema', Valor: C.soSistema },
+    { Item: 'Apurado para outro', Valor: C.outro }, { Item: 'Pendente', Valor: C.pendente }, { Item: 'Não localizado', Valor: C.naoLocalizado }], 'Resumo');
+  abaXlsx(wb, C.rows.map(r => ({ Data: r.data ? new Date(r.data).toLocaleDateString('pt-BR') : '', Atendimento: r.tipoRef === 'a' ? r.ref : '', Paciente: r.paciente || '', 'Guia(s) informada(s)': r.guiasInf.join(', '), 'Guia(s) no sistema': r.guiasSis.join(', '), 'Procedimento informado': r.procInf.join('; '), 'Procedimento apurado': r.procSis.join('; '), Informado: r.temInf ? +r.informado.toFixed(2) : '', Apurado: r.temSis ? +r.apurado.toFixed(2) : '', Diferença: +r.dif.toFixed(2), Situação: ST_LBL[r.status] || r.status })), 'Informado x apurado');
+  XLSX.writeFile(wb, `Conferencia_${nomeArq(d?.nome || 'dentista')}_${nomeArq(compLabel(S.conc.competencia))}.xlsx`);
+};
 $('#btnExport').onclick = () => {
   if (!S.result) { toast('Faça a conciliação primeiro.'); return; }
   exportarExcel(S.result, `Conciliacao_${compLabel(S.conc.competencia).replace('/', '_')}${S.ro ? '_fechada' : ''}.xlsx`);
