@@ -444,7 +444,7 @@ const Core = (() => {
     const sysGuias = new Set(systemRows.map(r => r.guia)), sysAt = new Set(systemRows.map(r => r.atendimento).filter(Boolean));
     const keyGuia = g => guiaAt.has(g) ? 'a:' + guiaAt.get(g) : 'g:' + g;
     const M = new Map();
-    const get = k => { if (!M.has(k)) M.set(k, { k, informado: 0, apurado: 0, temInf: false, temSis: false, paciente: '', data: null, guiasInf: new Set(), guiasSis: new Set(), procInf: [], procSis: [], linhaIds: [], pend: false }); return M.get(k); };
+    const get = k => { if (!M.has(k)) M.set(k, { k, informado: 0, apurado: 0, base: 0, ajusteInf: false, origens: new Set(), temInf: false, temSis: false, paciente: '', data: null, guiasInf: new Set(), guiasSis: new Set(), procInf: [], procSis: [], linhaIds: [], pend: false }); return M.get(k); };
     const files = dentistFiles.filter(f => f.dentistaId === dentistaId);
     files.forEach(f => (f.itens || []).forEach(it => {
       const k = it.guia && sysGuias.has(it.guia) ? keyGuia(it.guia) : it.atend && sysAt.has(it.atend) ? 'a:' + it.atend : 'x:' + (it.guia || it.atend);
@@ -454,26 +454,36 @@ const Core = (() => {
     result.linhas.forEach(l => {
       if (l.executorId !== dentistaId) return;
       const o = get(l.atendimento ? 'a:' + l.atendimento : 'g:' + l.guia);
-      o.temSis = true; o.apurado += l.valor; o.guiasSis.add(l.guiaRaw); o.procSis.push(l.procedimento); o.linhaIds.push(l.id);
+      o.temSis = true; o.apurado += l.valor; if (l.comissionavel) o.base += l.valor; o.origens.add(l.origem); o.guiasSis.add(l.guiaRaw); o.procSis.push(l.procedimento); o.linhaIds.push(l.id);
       o.paciente = o.paciente || l.paciente; o.data = o.data || l.data;
     });
     result.extras.forEach(e => {
-      if (e.dentistaId !== dentistaId || e.tipo === 'glosa') return;
+      if (e.dentistaId !== dentistaId) return;
+      if (e.tipo === 'glosa') { const o = get('l:' + e.key); o.glosa = true; o.temSis = true; o.apurado += e.valor; o.base += e.valor; o.guiasSis.add(e.ref); o.procSis.push(e.descricao); o.paciente = o.paciente || e.paciente; return; }
       const k = e.key || (e.tipo === 'split' && e.guia ? keyGuia(e.guia) : e.tipo === 'lancamento' ? 'x:' + e.ref : sysAt.has(e.ref) ? 'a:' + e.ref : 'g:' + e.ref);
-      const o = get(k); o.temSis = true; o.apurado += e.valor; o.procSis.push(e.descricao + (e.tipo === 'ajuste' ? ' (ajuste)' : ''));
+      const o = get(k); o.temSis = true; o.apurado += e.valor; if (e.comissionavel !== false) o.base += e.valor; if (e.tipo === 'ajuste') o.ajusteInf = true; o.origens.add(e.tipo); o.procSis.push(e.descricao + (e.tipo === 'ajuste' ? ' (ajuste)' : ''));
       o.paciente = o.paciente || e.paciente;
     });
     const pendKeys = new Set((result.pendentes || []).filter(l => l.pend).map(l => l.atendimento ? 'a:' + l.atendimento : 'g:' + l.guia));
+    const kl = l => l.atendimento ? 'a:' + l.atendimento : 'g:' + l.guia;
+    const porKey = new Map(); result.linhas.forEach(l => { const k = kl(l); if (!porKey.has(k)) porKey.set(k, []); porKey.get(k).push(l); });
+    const pendPorKey = new Map(); (result.pendentes || []).filter(l => l.pend).forEach(l => { const k = kl(l); if (!pendPorKey.has(k)) pendPorKey.set(k, []); pendPorKey.get(k).push(l); });
+    const neByKey = new Map(); (result.naoEncontradas || []).filter(x => x.informanteId === dentistaId).forEach(x => neByKey.set(x.key, x));
     const rows = [...M.values()].map(o => {
       let status;
-      if (o.temInf && o.temSis) status = Math.abs(o.informado - o.apurado) <= Math.max(0.05, tol) ? 'ok' : 'dif';
+      if (o.glosa) status = 'glosa';
+      else if (o.temInf && o.temSis) status = Math.abs(o.informado - o.apurado) <= Math.max(0.05, tol) ? 'ok' : 'dif';
       else if (o.temInf) status = o.k.startsWith('x:') ? 'nao_localizado' : pendKeys.has(o.k) ? 'pendente' : 'outro';
       else status = 'so_sistema';
-      return { ...o, guiasInf: [...o.guiasInf], guiasSis: [...o.guiasSis], ref: o.k.slice(2), tipoRef: o.k[0], dif: o.informado - o.apurado, status };
+      const det = {};
+      if (status === 'outro') { const ls = porKey.get(o.k) || []; det.executores = [...new Set(ls.map(l => l.executorId || (l.origem === 'split' ? 'split' : null)))]; det.splits = ls.filter(l => l.origem === 'split').flatMap(l => l.split || []); }
+      if (status === 'pendente') { const ls = pendPorKey.get(o.k) || []; det.motivos = [...new Set(ls.map(l => (l.obs || l.status || l.situacao || '').trim()).filter(Boolean))]; det.executores = [...new Set(ls.map(l => l.executorId || null))]; }
+      if (status === 'nao_localizado') { const x = neByKey.get(o.k); det.decisao = x?.decisao || null; }
+      return { ...o, origens: [...o.origens], det, guiasInf: [...o.guiasInf], guiasSis: [...o.guiasSis], ref: o.k.slice(2), tipoRef: o.k[0], dif: o.glosa ? 0 : o.informado - o.apurado, status };
     }).sort((a, b) => (a.status === 'ok') - (b.status === 'ok') || Math.abs(b.dif) - Math.abs(a.dif));
-    const soma = k => rows.reduce((a, r) => a + r[k], 0);
+    const soma = k => rows.filter(r => !r.glosa).reduce((a, r) => a + r[k], 0);
     const cont = st => rows.filter(r => r.status === st).length;
-    return { rows, temPlanilha: files.length > 0, informado: soma('informado'), apurado: soma('apurado'), dif: soma('informado') - soma('apurado'),
+    return { rows, temPlanilha: files.length > 0, informado: soma('informado'), apurado: soma('apurado'), base: rows.reduce((a, r) => a + r.base, 0), glosas: rows.filter(r => r.glosa).reduce((a, r) => a + r.apurado, 0), dif: soma('informado') - soma('apurado'),
       ok: cont('ok'), difs: cont('dif'), soSistema: cont('so_sistema'), outro: cont('outro'), pendente: cont('pendente'), naoLocalizado: cont('nao_localizado') };
   }
 

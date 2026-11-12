@@ -140,11 +140,8 @@ Aba **Glosas**: suba o arquivo de glosas (.xlsx, .xls ou .csv, uma aba por lote,
 ## Guias pendentes
 Toda linha com status/situação **Pendente** fica **fora do movimento**: não entra em produção, detalhamento, divergências, base nem comissão. Ela aparece só na aba **Guias pendentes**, com motivo e executor. Lá o usuário escolhe o executor (mesmas regras do Resultado) e clica em **Aprovar pgto**. A guia aprovada entra na produção e na comissão. A aprovação fica registrada com data e usuário e pode ser desfeita.
 
-## Limpar a base (recomeçar)
-Pelo próprio sistema (admin): **Histórico → Apagar bases**. Apaga competências, versões, comissões, pagamentos e as planilhas do Storage; opcionalmente também os dentistas (menos CLINICA) e a auditoria. Pede para digitar APAGAR.
-Requer rodar uma vez `supabase/apagar_bases.sql` (já incluído no `schema.sql`).
-
-Alternativa manual: `supabase/limpar_base.sql` no SQL Editor + apagar as pastas em **Storage → planilhas**.
+## Apagar bases
+Pelo próprio sistema (admin): **Histórico → Apagar bases**. Escolha a competência: aparecem os arquivos guardados dela (sistema, dentistas, glosas, inclusive os substituídos). Marque e apague só os arquivos que quiser, ou apague a competência inteira (pede para digitar APAGAR). As outras competências, os dentistas e os usuários não mudam. Requer rodar uma vez `supabase/atualizacao_2026_11_12b.sql` (já incluído no `schema.sql`).
 
 ## Atualização 2026.11.12
 Rode uma vez `supabase/atualizacao_2026_11_12.sql` no SQL Editor (cria o índice de guias e libera arquivos de glosa). Depois abra cada mês já conciliado uma vez para ele entrar na busca do histórico.

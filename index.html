@@ -171,6 +171,7 @@ table.t{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
 tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#fff3c4}100%{background:transparent}}
 .dmgo{color:var(--ink);text-decoration:none;display:block}.dmgo:hover .l{color:var(--brand);text-decoration:underline}
 #tblGlosa .tag,#tblPainel .tag,#tblPend .tag,#dmTbl .tag{white-space:normal;line-height:1.3}
+#cardAud.fechado #segAud,#cardAud.fechado #tblAud{display:none}#cardAud.fechado .row{margin-bottom:0!important}
 </style>
 </head>
 <body>
@@ -186,7 +187,7 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
     <button data-tab="esp">Especialidades</button>
     <button data-tab="hist">Histórico</button>
   </nav>
-  <div class="user" title="versão 2026.11.12-3"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
+  <div class="user" title="versão 2026.11.12-6"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
 </div></header>
 
 <div class="wrap">
@@ -334,7 +335,7 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
   <div class="card"><h3 style="margin:0 0 10px">Competências</h3><table class="t" id="tblConc"></table></div>
   <div class="card sect hide" id="cardVers"><div class="row" style="margin-bottom:10px"><h3 style="margin:0" id="versTitle">Versões</h3></div><table class="t" id="tblVers"></table></div>
   <div class="card sect"><div class="row" style="margin-bottom:10px"><h3 style="margin:0">Comissões fechadas por dentista</h3><span class="sp"></span><span class="muted" style="font-size:12px">Últimas 6 competências fechadas (versão vigente)</span></div><table class="t" id="tblPivot"></table></div>
-  <div class="card sect"><div class="row" style="margin-bottom:10px"><h3 style="margin:0">Auditoria</h3><span class="sp"></span>
+  <div class="card sect fechado" id="cardAud"><div class="row" style="margin-bottom:10px"><button class="btn sm ghost" id="audToggle" title="Expandir / encolher" style="padding:2px 8px">▸</button><h3 style="margin:0;cursor:pointer" id="audTitulo">Auditoria</h3><span class="muted" id="audResumo" style="font-size:12px"></span><span class="sp"></span>
     <div class="seg" id="segAud"><button class="on" data-a="">Tudo</button><button data-a="conciliacoes">Conciliações</button><button data-a="conciliacao_arquivos">Arquivos</button><button data-a="dentistas">Dentistas</button><button data-a="especialidades">Especialidades</button></div></div>
     <table class="t" id="tblAud"></table></div>
   <div class="card sect hide" id="cardApagar" style="border-color:#f1c4c4">
@@ -354,7 +355,7 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
     <label class="fld"><span>E-mail</span><input class="inp" id="lgEmail" type="email" autocomplete="username" required></label>
     <label class="fld" style="margin-top:10px"><span>Senha</span><input class="inp" id="lgSenha" type="password" autocomplete="current-password" required></label>
     <button class="btn pri" style="width:100%;justify-content:center;margin-top:16px" id="lgBtn">Entrar</button>
-    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.12-3</p>
+    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.12-6</p>
     <p class="muted" id="lgMsg" style="font-size:12.5px;min-height:18px;margin:10px 0 0"></p>
     <div class="lg-links"><a href="#" id="lnkAcesso">Solicitar acesso</a><span>·</span><a href="#" id="lnkSenha">Esqueci minha senha</a></div>
   </form>
@@ -384,10 +385,10 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
   <p id="spMsg" style="color:var(--bad);font-size:12.5px;min-height:18px;margin:10px 0 4px"></p>
   <div class="row"><button class="btn ghost danger hide" id="spRemover">Remover divisão</button><span class="sp"></span><button class="btn ghost" id="spCancel">Cancelar</button><button class="btn pri" id="spOk">Aplicar divisão</button></div>
 </div></div>
-<div class="modal-bg" id="dentModal"><div class="modal" style="width:min(1180px,100%);max-height:92vh;display:flex;flex-direction:column">
-  <div class="row" style="margin-bottom:4px"><h3 style="margin:0" id="dmTitle"></h3><span id="dmStatus"></span><span class="sp"></span><button class="btn sm" id="dmExport">⬇ Exportar Excel</button><button class="btn sm" id="dmDet">Ver linhas no detalhamento</button><button class="btn sm" id="dmFechar">Fechar</button></div>
+<div class="modal-bg" id="dentModal"><div class="modal" style="width:min(1320px,100%);max-height:94vh;display:flex;flex-direction:column">
+  <div class="row" style="margin-bottom:4px"><h3 style="margin:0" id="dmTitle"></h3><span id="dmStatus"></span><span class="sp"></span><button class="btn sm" id="dmExport">⬇ Exportar Excel</button><button class="btn sm" id="dmPdf">⬇ Exportar PDF</button><button class="btn sm" id="dmDet">Ver linhas no detalhamento</button><button class="btn sm" id="dmFechar">Fechar</button></div>
   <p class="muted" id="dmHint" style="margin:0 0 10px;font-size:12.5px"></p>
-  <div class="kpis" id="dmKpis" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:12px"></div>
+  <div class="kpis" id="dmKpis" style="grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:12px"></div>
   <div class="row" style="margin-bottom:8px"><div class="seg" id="dmSeg"></div></div>
   <div style="overflow-y:auto;min-height:0"><table class="t" id="dmTbl"></table></div>
 </div></div>
@@ -404,8 +405,10 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
 
 <script src="js/vendor/xlsx.full.min.js"></script>
 <script src="js/vendor/supabase.js"></script>
-<script src="js/config.js?v=2026.11.12-3"></script>
-<script src="js/core.js?v=2026.11.12-3"></script>
-<script src="js/app.js?v=2026.11.12-3"></script>
+<script src="js/vendor/jspdf.umd.min.js"></script>
+<script src="js/vendor/jspdf.plugin.autotable.min.js"></script>
+<script src="js/config.js?v=2026.11.12-6"></script>
+<script src="js/core.js?v=2026.11.12-6"></script>
+<script src="js/app.js?v=2026.11.12-6"></script>
 </body>
 </html>
