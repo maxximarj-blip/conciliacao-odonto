@@ -202,7 +202,7 @@ const Core = (() => {
         Se não bater, fica pendente na divergência para o usuário decidir.
      4) Sem nenhuma planilha → usa o dentista do sistema, se estiver cadastrado.
      5) Decisões do usuário: resoluções de divergência, lançamentos não localizados e troca linha a linha. */
-  function reconcile({ systemRows, dentistFiles, dentistas, especialidades, situacoesBase, overrides = {}, diariasOverride = {}, resolucoes = {}, lancamentos = {}, splits = {}, regrasProc = [], aprovadas = {}, decAtend = {}, tolAtend = 1, tolDiv = 1 }) {
+  function reconcile({ systemRows, dentistFiles, dentistas, especialidades, situacoesBase, overrides = {}, diariasOverride = {}, resolucoes = {}, lancamentos = {}, splits = {}, regrasProc = [], aprovadas = {}, decAtend = {}, tolAtend = 1, tolDiv = 1, glosas = [] }) {
     const byId = Object.fromEntries(dentistas.map(d => [d.id, d]));
     const files = dentistFiles.filter(f => f.dentistaId);
     const add = (m, k, v) => { if (!m.has(k)) m.set(k, new Set()); m.get(k).add(v); };
@@ -368,15 +368,18 @@ const Core = (() => {
       if ((it.guia && sysGuias.has(it.guia)) || (it.atend && sysAt.has(it.atend))) return;
       const id = f.name + '|' + it.linha;
       const dec = lancamentos[id] || null;
-      const x = { id, key: 'x:' + (it.guia || it.atend), guia: it.guiaRaw || it.guia || '', atend: it.atend || '', paciente: it.paciente || '', procedimento: it.procedimento || '', valor: it.valor, data: it.data || null, informanteId: f.dentistaId, arquivo: f.name, decisao: dec };
+      const x = { id, key: 'x:' + (it.guia || it.atend), guiaN: it.guia || '', guia: it.guiaRaw || it.guia || '', atend: it.atend || '', paciente: it.paciente || '', procedimento: it.procedimento || '', valor: it.valor, data: it.data || null, informanteId: f.dentistaId, arquivo: f.name, decisao: dec };
       naoEncontradas.push(x);
       if (dec?.dentistaId) extras.push({ tipo: 'lancamento', dentistaId: dec.dentistaId, valor: dec.valor ?? it.valor ?? 0, data: it.data || null, key: 'x:' + (it.guia || it.atend), ref: x.guia || x.atend, paciente: x.paciente, descricao: it.procedimento || 'Lançamento não localizado' });
     }));
 
+    // ---- glosas descontadas da comissão (reduzem a base do executor)
+    glosas.forEach(g => { if (g.dentistaId && g.valor) extras.push({ tipo: 'glosa', dentistaId: g.dentistaId, valor: -Math.abs(g.valor), comissionavel: true, data: null, key: 'gl:' + g.id, ref: g.guia, paciente: g.paciente || '', descricao: `Glosa: ${g.procedimento || ''}` }); });
+
     // ---- resumo por dentista
     const espById = Object.fromEntries(especialidades.map(e => [e.id, e]));
     const resumo = {};
-    const get = d => resumo[d.id] || (resumo[d.id] = { dentista: d, guias: new Set(), procs: 0, producao: 0, base: 0, ajustes: 0, divididas: 0, dias: new Set(), pendente: 0 });
+    const get = d => resumo[d.id] || (resumo[d.id] = { dentista: d, guias: new Set(), procs: 0, producao: 0, base: 0, ajustes: 0, glosas: 0, divididas: 0, dias: new Set(), pendente: 0 });
     mov.forEach(l => {
       const d = byId[l.executorId]; if (!d) return;
       const s = get(d); s.guias.add(l.guia); s.procs++; s.producao += l.valor;
@@ -384,7 +387,9 @@ const Core = (() => {
     });
     extras.forEach(e => {
       const d = byId[e.dentistaId]; if (!d) return;
-      const s = get(d); s.producao += e.valor;
+      const s = get(d);
+      if (e.tipo === 'glosa') { s.glosas += e.valor; s.base += e.valor; return; }
+      s.producao += e.valor;
       if (e.tipo === 'split') { s.divididas += e.valor; s.procs++; if (e.guia) s.guias.add(e.guia); }
       else s.ajustes += e.valor;
       if (e.comissionavel === false) s.pendente += e.valor;
@@ -400,7 +405,7 @@ const Core = (() => {
       else if (forma === 'diaria') comissao = diarias * valorRef;
       else if (forma === 'fixo') comissao = valorRef;
       comissao = Math.round(comissao * 100) / 100;
-      return { dentistaId: d.id, nome: d.nome, especialidade: esp?.nome || '—', forma, valorRef, guias: s.guias.size, procs: s.procs, producao: s.producao, base: s.base, ajustes: s.ajustes, divididas: s.divididas, pendente: s.pendente, diarias, diariasCalc, comissao };
+      return { dentistaId: d.id, nome: d.nome, especialidade: esp?.nome || '—', forma, valorRef, guias: s.guias.size, procs: s.procs, producao: s.producao, base: s.base, ajustes: s.ajustes, glosas: s.glosas, divididas: s.divididas, pendente: s.pendente, diarias, diariasCalc, comissao };
     }).sort((a, b) => b.producao - a.producao);
 
     const divPend = new Set(divergencias.filter(d => !d.decididaAtend && (!d.resolucao || d.resolucao.decisao === 'pendente')).map(d => d.key)).size;
@@ -409,7 +414,8 @@ const Core = (() => {
       producao: mov.reduce((a, l) => a + l.valor, 0),
       base: resumoArr.reduce((a, r) => a + r.base, 0),
       comissao: resumoArr.reduce((a, r) => a + r.comissao, 0),
-      ajustes: extras.filter(e => e.tipo !== 'split').reduce((a, e) => a + e.valor, 0),
+      ajustes: extras.filter(e => e.tipo !== 'split' && e.tipo !== 'glosa').reduce((a, e) => a + e.valor, 0),
+      glosas: extras.filter(e => e.tipo === 'glosa').reduce((a, e) => a + e.valor, 0),
       identificadas: mov.filter(l => l.executorId || l.origem === 'split').length,
       divididas: mov.filter(l => l.origem === 'split').length,
       viaDentista: mov.filter(l => l.origem === 'dentista' || l.origem === 'atendimento').length,
@@ -452,7 +458,7 @@ const Core = (() => {
       o.paciente = o.paciente || l.paciente; o.data = o.data || l.data;
     });
     result.extras.forEach(e => {
-      if (e.dentistaId !== dentistaId) return;
+      if (e.dentistaId !== dentistaId || e.tipo === 'glosa') return;
       const k = e.key || (e.tipo === 'split' && e.guia ? keyGuia(e.guia) : e.tipo === 'lancamento' ? 'x:' + e.ref : sysAt.has(e.ref) ? 'a:' + e.ref : 'g:' + e.ref);
       const o = get(k); o.temSis = true; o.apurado += e.valor; o.procSis.push(e.descricao + (e.tipo === 'ajuste' ? ' (ajuste)' : ''));
       o.paciente = o.paciente || e.paciente;
@@ -471,6 +477,39 @@ const Core = (() => {
       ok: cont('ok'), difs: cont('dif'), soSistema: cont('so_sistema'), outro: cont('outro'), pendente: cont('pendente'), naoLocalizado: cont('nao_localizado') };
   }
 
-  return { norm, nameKey, guiaKey, toNum, toDate, dayKey, findHeaderRow, mapColumns, analyzeSystemWorkbook, buildSystemRows, analyzeDentistWorkbook, limpaTexto, compararDentista, matchDentist, guessDentistFromFilename, guessDentistFromText, reconcile };
+  // ---- arquivo de glosas: abas com Nº da guia + Situação + Valor (ex.: "Glosas de Agosto")
+  function analyzeGlosaWorkbook(sheets) {
+    const itens = [], lotes = [];
+    sheets.forEach(sh => {
+      const rows = sh.rows || [];
+      let hi = -1;
+      for (let i = 0; i < Math.min(rows.length, 30); i++) {
+        const hs = (rows[i] || []).map(c => norm(c));
+        if (hs.some(h => /guia/.test(h)) && hs.some(h => /situa/.test(h)) && hs.some(h => /valor/.test(h))) { hi = i; break; }
+      }
+      if (hi < 0) return;
+      const H = (rows[hi] || []).map(c => norm(c));
+      const col = re => H.findIndex(h => re.test(h));
+      const c = { atend: col(/atendimento/), data: H.findIndex(h => /^data/.test(h) && !/recur|recus/.test(h)), guia: col(/guia/), sit: col(/situa/), status: col(/status/), dent: col(/dentista/),
+        valor: col(/valor/), proc: col(/procedimento/), conv: col(/convenio|conv/), motivo: col(/observ|motivo/) };
+      let n = 0, total = 0;
+      for (let i = hi + 1; i < rows.length; i++) {
+        const r = rows[i] || [], raw = r[c.guia];
+        if (raw === null || raw === undefined || String(raw).trim() === '') continue;
+        const sitTxt = String(r[c.sit] ?? '').trim(), sn = norm(sitTxt);
+        const sit = /nao tem como|sem recurso/.test(sn) ? 'sem_recurso' : /recus/.test(sn) ? 'recusado' : /pend/.test(sn) ? 'pendencia' : 'outro';
+        const valor = toNum(r[c.valor]) || 0;
+        itens.push({ id: sh.name + '|' + (i + 1), lote: sh.name.trim().replace(/\.$/, ''), atend: c.atend >= 0 ? guiaKey(r[c.atend]) : '', data: c.data >= 0 ? toDate(r[c.data]) : null,
+          guia: guiaKey(raw), guiaRaw: String(raw).replace(/\.0$/, '').trim(), situacao: sitTxt.replace(/\.\s*$/, ''), sit, statusOriginal: c.status >= 0 ? String(r[c.status] ?? '').trim() : '',
+          dentistaArq: c.dent >= 0 ? limpaTexto(r[c.dent]) : '', valor, procedimento: c.proc >= 0 ? limpaTexto(r[c.proc], true) : '', convenio: c.conv >= 0 ? limpaTexto(r[c.conv]) : '',
+          motivo: c.motivo >= 0 ? String(r[c.motivo] ?? '').trim() : '' });
+        n++; total += valor;
+      }
+      if (n) lotes.push({ nome: sh.name.trim().replace(/\.$/, ''), n, total });
+    });
+    return { itens, lotes };
+  }
+
+  return { norm, nameKey, guiaKey, analyzeGlosaWorkbook, toNum, toDate, dayKey, findHeaderRow, mapColumns, analyzeSystemWorkbook, buildSystemRows, analyzeDentistWorkbook, limpaTexto, compararDentista, matchDentist, guessDentistFromFilename, guessDentistFromText, reconcile };
 })();
 if (typeof module !== 'undefined') module.exports = Core;

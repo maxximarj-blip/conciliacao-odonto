@@ -53,11 +53,12 @@ function dialog(title, text, { input = false, placeholder = '', okText = 'Confir
     $('#mNo').onclick = () => done(input ? null : false);
   });
 }
-const TABS = ['conc', 'res', 'pend', 'dent', 'esp', 'hist'];
+const TABS = ['conc', 'res', 'pend', 'glosa', 'dent', 'esp', 'hist'];
 function showTab(t) {
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   TABS.forEach(x => $('#tab-' + x).classList.toggle('hide', x !== t));
   if (t === 'hist') loadHistorico();
+  if (t === 'glosa') renderGlosa();
   window.scrollTo(0, 0);
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -196,6 +197,8 @@ $('#compMes').onchange = () => { if ($('#compMes').value) abrirCompetencia($('#c
 function resetEstado() {
   S.sys = null; S.denFiles = []; S.situacoes = []; S.sitBase = new Set();
   S.overrides = {}; S.overridesAuto = {}; S.aprovadas = {}; S.pagamentos = []; S.decAtend = {}; S.decGuia = {}; S.decGuiaAuto = {}; S.diarias = {}; S.resolucoes = {}; S.lancamentos = {}; S.splits = {}; S.result = null;
+  S.conciliado = false; S.conciliadoSalvo = false; S.glosaDec = {}; S.glosa = null; S.hist = { sis: {}, sisAt: {}, inf: {}, ok: false };
+  S.undoLote = [];
   S.view = { orig: 'todas', dent: '', q: '', page: 0 }; S.divView = { f: 'pend', page: 0 };
   $('#tolDiv').value = 1;
 }
@@ -209,7 +212,7 @@ async function abrirCompetencia(mes) {
     S.conc = c || { competencia: comp, novo: true };
     if (c) {
       const regras = c.regras || {}, dec = c.decisoes || {};
-      S.overrides = dec.overrides || {}; S.diarias = dec.diarias || {}; S.resolucoes = dec.resolucoes || {}; S.lancamentos = dec.lancamentos || {}; S.splits = dec.splits || {}; S.overridesAuto = dec.overridesAuto || {}; S.aprovadas = dec.aprovadas || {}; S.pagamentos = dec.pagamentos || []; S.decAtend = dec.decAtend || {}; S.decGuia = dec.decGuia || {}; S.decGuiaAuto = dec.decGuiaAuto || {};
+      S.overrides = dec.overrides || {}; S.diarias = dec.diarias || {}; S.resolucoes = dec.resolucoes || {}; S.lancamentos = dec.lancamentos || {}; S.splits = dec.splits || {}; S.overridesAuto = dec.overridesAuto || {}; S.aprovadas = dec.aprovadas || {}; S.pagamentos = dec.pagamentos || []; S.decAtend = dec.decAtend || {}; S.decGuia = dec.decGuia || {}; S.decGuiaAuto = dec.decGuiaAuto || {}; S.conciliadoSalvo = !!dec.conciliado; S.glosaDec = dec.glosaDec || {};
       if (regras.tolDiv != null) $('#tolDiv').value = regras.tolDiv;
       const arqs = await q(sb.from('conciliacao_arquivos').select('*').eq('conciliacao_id', c.id).eq('ativo', true).order('enviado_em'), 'Arquivos');
       const sysA = arqs.filter(a => a.tipo === 'sistema').pop();
@@ -217,15 +220,19 @@ async function abrirCompetencia(mes) {
         const sheets = await baixarPlanilha(sysA.storage_path);
         montarSistema(sysA.nome, sheets, sysA.id, regras);
       }
+      const gA = arqs.filter(a => a.tipo === 'glosa').pop();
+      if (gA) { try { montarGlosa(gA.nome, await baixarPlanilha(gA.storage_path), gA.id); } catch (e) { console.warn('glosa', e); } }
       for (const a of arqs.filter(x => x.tipo === 'dentista')) {
         const sheets = await baixarPlanilha(a.storage_path);
         const df = { id: a.id, arquivoId: a.id, name: a.nome, sheets, dentistaId: a.dentista_id || '' };
         analyzeDen(df, false); S.denFiles.push(df);
       }
     }
-    S.ro = S.conc.status === 'fechada'; S.conciliado = false;
+    S.ro = S.conc.status === 'fechada'; S.conciliado = !!S.conciliadoSalvo; S.conciliadoSalvo = false;
     if (S.sys) run(false); else renderResult();
     renderAllConc(); renderCompBar();
+    if (S.sys) atualizarHistorico(false);
+    if (S.glosa) buscarExecGlosa();
     setSave(c ? 'tudo salvo' : '');
   } catch (e) { toast(e.message); setSave('erro', true); }
   document.body.classList.remove('loading');
@@ -246,7 +253,7 @@ async function enviarArquivo(file, tipo, dentistaId) {
   return q(sb.from('conciliacao_arquivos').insert({ conciliacao_id: c.id, tipo, nome: file.name, dentista_id: dentistaId || null, storage_path: path, tamanho: file.size }).select().single(), 'Registrar arquivo');
 }
 const regrasAtuais = () => ({ sitBase: [...S.sitBase], tolDiv: Math.max(0, +$('#tolDiv').value || 0) });
-const decisoesAtuais = () => ({ overrides: S.overrides, diarias: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, overridesAuto: S.overridesAuto, aprovadas: S.aprovadas, pagamentos: S.pagamentos, decAtend: S.decAtend, decGuia: S.decGuia, decGuiaAuto: S.decGuiaAuto });
+const decisoesAtuais = () => ({ overrides: S.overrides, diarias: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, overridesAuto: S.overridesAuto, aprovadas: S.aprovadas, pagamentos: S.pagamentos, decAtend: S.decAtend, decGuia: S.decGuia, decGuiaAuto: S.decGuiaAuto, conciliado: !!S.conciliado, glosaDec: S.glosaDec || {} });
 const totaisAtuais = () => {
   if (!S.result) return {};
   const T = S.result.tot;
@@ -296,7 +303,8 @@ $('#btnVersao').onclick = async () => {
 $('#btnFechar').onclick = async () => {
   if (!S.result) { toast('Faça a conciliação primeiro.'); return; }
   const T = S.result.tot;
-  const aviso = T.pendencias ? `\n\n⚠ Ainda há ${T.pendencias} pendência(s) sem decisão (${T.divPend} divergências, ${T.neAbertos} não localizados, ${T.conflitos} conflitos). Elas ficarão fora da comissão.` : '';
+  const nPend = (S.linhasConf || []).filter(ehPend).length;
+  const aviso = nPend ? `\n\n⚠ Ainda há ${nPend} pendência(s) sem decisão na conferência das guias. Elas ficarão fora da comissão.` : '';
   const obs = await dialog(`Fechar ${compLabel(S.conc.competencia)}?`, `Comissão total: ${brl(T.comissao)} para ${S.result.resumo.length} dentista(s).\nDepois de fechada, a competência fica travada e as comissões vão para o histórico.${aviso}`, { input: true, placeholder: 'Observação do fechamento (opcional)', okText: 'Fechar competência' });
   if (obs === null) return;
   try {
@@ -454,7 +462,7 @@ function checkReady() {
   btn.disabled = false;
   msg.innerHTML = semDent ? `<span style="color:var(--warn)">⚠ ${semDent} planilha(s) sem dentista vinculado — serão ignoradas.</span>` : `${n0(S.sys.rows.length)} linhas do sistema · ${S.denFiles.length} planilha(s) de dentista`;
 }
-$('#btnRun').onclick = () => { S.conciliado = true; run(true); salvar(); };
+$('#btnRun').onclick = async () => { S.conciliado = true; run(true); salvar(); await flushNow().catch(() => {}); atualizarHistorico(true); };
 $('#tolDiv').onchange = () => { if (S.result) run(false); salvar(); };
 
 /* ===================== conciliação ===================== */
@@ -462,9 +470,9 @@ function run(go) {
   if (!S.sys) return;
   S.result = Core.reconcile({
     systemRows: S.sys.rows, dentistFiles: S.denFiles.filter(f => f.dentistaId), dentistas: S.cad.dentistas, especialidades: S.cad.especialidades,
-    situacoesBase: [...S.sitBase], overrides: S.overrides, diariasOverride: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, regrasProc: S.cad.regras.filter(r => r.ativo && dentById(r.dentistaId)?.ativo), aprovadas: S.aprovadas, decAtend: { ...S.decAtend, ...decisoesGuiaParaMotor() }, tolDiv: Math.max(0, +$('#tolDiv').value || 0),
+    situacoesBase: [...S.sitBase], overrides: S.overrides, diariasOverride: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, regrasProc: S.cad.regras.filter(r => r.ativo && dentById(r.dentistaId)?.ativo), aprovadas: S.aprovadas, decAtend: { ...S.decAtend, ...decisoesGuiaParaMotor() }, tolDiv: Math.max(0, +$('#tolDiv').value || 0), glosas: glosasParaMotor(),
   });
-  renderResult(); renderCompBar();
+  renderResult(); renderCompBar(); if (!$('#tab-glosa').classList.contains('hide')) renderGlosa();
   if (go) { S.view.page = 0; showTab('res'); }
 }
 function renderResult() {
@@ -490,15 +498,15 @@ function renderResult() {
 function renderResumo() {
   const rows = S.result.resumo.filter(r => !S.gf.dent || S.gf.dent === '_none' || r.dentistaId === S.gf.dent);
   const tot = k => rows.reduce((a, r) => a + r[k], 0);
-  $('#tblResumo').innerHTML = `<colgroup><col style="width:17%"><col style="width:9%"><col style="width:11%"><col style="width:6%"><col style="width:5%"><col style="width:11%"><col style="width:9%"><col style="width:11%"><col style="width:6%"><col style="width:9%"><col style="width:6%"></colgroup>
-  <thead><tr><th>Dentista</th><th>Especialidade</th><th>Remuneração</th><th class="num">Guias</th><th class="num">Proc.</th><th class="num">Produção</th><th class="num" title="Ajustes de divergência e lançamentos não localizados atribuídos">Ajustes</th><th class="num">Base</th><th class="num">Diárias</th><th class="num">Comissão</th><th class="num">Pgto</th></tr></thead>
+  $('#tblResumo').innerHTML = `<colgroup><col style="width:15%"><col style="width:8%"><col style="width:10%"><col style="width:5%"><col style="width:5%"><col style="width:10%"><col style="width:8%"><col style="width:8%"><col style="width:10%"><col style="width:6%"><col style="width:9%"><col style="width:6%"></colgroup>
+  <thead><tr><th>Dentista</th><th>Especialidade</th><th>Remuneração</th><th class="num">Guias</th><th class="num">Proc.</th><th class="num">Produção</th><th class="num" title="Ajustes de divergência e lançamentos não localizados atribuídos">Ajustes</th><th class="num" title="Glosas descontadas (aba Glosas)">Glosas</th><th class="num">Base</th><th class="num">Diárias</th><th class="num">Comissão</th><th class="num">Pgto</th></tr></thead>
   <tbody>${rows.length ? rows.map(r => `<tr style="cursor:pointer" data-dent="${r.dentistaId}" title="Conferir informado × apurado de ${esc(r.nome)}">
     <td><b style="color:var(--brand);text-decoration:underline;text-underline-offset:3px">${esc(r.nome)}</b></td><td>${esc(r.especialidade)}</td>
     <td>${r.forma === 'percentual' ? r.valorRef + '% da base' : r.forma === 'diaria' ? brl(r.valorRef) + '/dia' : brl(r.valorRef) + ' fixo'}</td>
-    <td class="num">${n0(r.guias)}</td><td class="num">${n0(r.procs)}</td><td class="num">${brl(r.producao)}</td><td class="num" style="color:${r.ajustes ? 'var(--ink)' : 'var(--muted)'}">${r.ajustes ? brl(r.ajustes) : '—'}</td><td class="num">${brl(r.base)}</td>
+    <td class="num">${n0(r.guias)}</td><td class="num">${n0(r.procs)}</td><td class="num">${brl(r.producao)}</td><td class="num" style="color:${r.ajustes ? 'var(--ink)' : 'var(--muted)'}">${r.ajustes ? brl(r.ajustes) : '—'}</td><td class="num" style="color:${r.glosas ? 'var(--bad)' : 'var(--muted)'}">${r.glosas ? brl(r.glosas) : '—'}</td><td class="num">${brl(r.base)}</td>
     <td class="num">${r.forma === 'diaria' ? `<input class="inp num" type="number" min="0" step="1" value="${r.diarias}" data-dia="${r.dentistaId}" title="Calculado: ${r.diariasCalc}" style="width:60px;text-align:right">` : `<span class="muted">${r.diariasCalc}</span>`}</td>
-    <td class="num"><b>${brl(r.comissao)}</b></td><td class="num">${pgtoTxt(r.dentistaId)}</td></tr>`).join('') : `<tr><td colspan="11" class="empty">Nenhum dentista identificado. Confira o cadastro e os vínculos das planilhas.</td></tr>`}</tbody>
-  <tfoot><tr><td>Total</td><td></td><td></td><td class="num">${n0(tot('guias'))}</td><td class="num">${n0(tot('procs'))}</td><td class="num">${brl(tot('producao'))}</td><td class="num">${brl(tot('ajustes'))}</td><td class="num">${brl(tot('base'))}</td><td></td><td class="num">${brl(tot('comissao'))}</td><td></td></tr></tfoot>`;
+    <td class="num"><b>${brl(r.comissao)}</b></td><td class="num">${pgtoTxt(r.dentistaId)}</td></tr>`).join('') : `<tr><td colspan="12" class="empty">Nenhum dentista identificado. Confira o cadastro e os vínculos das planilhas.</td></tr>`}</tbody>
+  <tfoot><tr><td>Total</td><td></td><td></td><td class="num">${n0(tot('guias'))}</td><td class="num">${n0(tot('procs'))}</td><td class="num">${brl(tot('producao'))}</td><td class="num">${brl(tot('ajustes'))}</td><td class="num">${brl(tot('glosas'))}</td><td class="num">${brl(tot('base'))}</td><td></td><td class="num">${brl(tot('comissao'))}</td><td></td></tr></tfoot>`;
   $('#tblResumo').querySelectorAll('tr[data-dent]').forEach(tr => tr.onclick = e => {
     if (e.target.tagName === 'INPUT') return;
     abrirConferencia(tr.dataset.dent);
@@ -510,6 +518,13 @@ function renderResumo() {
 const ST_LBL = { ok: '✓ Conciliado', dif: '≠ Diferença', so_sistema: 'Só no sistema', outro: 'Apurado p/ outro / sem executor', pendente: 'Pendente no sistema', nao_localizado: 'Não localizado no sistema' };
 const ST_CURTO = { ok: '✓ Conciliado', dif: '≠ Diferença', so_sistema: 'Só no sistema', outro: 'Outro executor', pendente: 'Pendente', nao_localizado: 'Não localizado' };
 let dmState = { id: null, f: 'todas' };
+function irParaLinha(q) {
+  if (!q) return;
+  $('#dentModal').classList.remove('on'); S.painel.f = 'todos'; setFiltroGlobal('', q); showTab('res');
+  setTimeout(() => { $('#cardPainel').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('#tblPainel').querySelectorAll('tbody tr').forEach(tr => { tr.classList.remove('flash'); void tr.offsetWidth; tr.classList.add('flash'); }); }, 60);
+  toast(`Mostrando a conferência de "${q}". Para ver tudo de novo, clique em "limpar" no topo.`);
+}
+$('#dmTbl').addEventListener('click', e => { const a = e.target.closest('[data-dmgo]'); if (!a) return; e.preventDefault(); irParaLinha(a.dataset.dmgo); });
 function abrirConferencia(id) { dmState = { id, f: 'todas' }; renderConferencia(); $('#dentModal').classList.add('on'); }
 $('#dmFechar').onclick = () => $('#dentModal').classList.remove('on');
 $('#dmDet').onclick = () => { $('#dentModal').classList.remove('on'); S.painel.f = 'todos'; setFiltroGlobal(dmState.id, ''); showTab('res'); setTimeout(() => $('#cardPainel').scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); };
@@ -534,13 +549,13 @@ function renderConferencia() {
   $('#dmTbl').innerHTML = `<colgroup><col style="width:17%"><col style="width:13%"><col style="width:32%"><col style="width:9%"><col style="width:9%"><col style="width:8%"><col style="width:12%"></colgroup>
     <thead><tr><th>Atendimento / paciente</th><th>Guia(s)</th><th>Procedimentos (informado · apurado)</th><th class="num">Informado</th><th class="num">Apurado</th><th class="num">Dif.</th><th>Situação</th></tr></thead>
     <tbody>${rows.length ? rows.map(r => `<tr>
-      <td class="two"><span class="l"><span class="mono" style="font-size:12px">${r.tipoRef === 'a' ? esc(r.ref) : '—'}</span> · ${esc(r.paciente || '—')}</span><small>${r.data ? new Date(r.data).toLocaleDateString('pt-BR') : ''}</small></td>
+      <td class="two"><a href="#" class="dmgo" data-dmgo="${esc(r.tipoRef === 'a' ? r.ref : (r.guiasSis[0] || r.guiasInf[0] || r.paciente || ''))}" title="Abrir esta linha na conferência das guias"><span class="l"><span class="mono" style="font-size:12px">${r.tipoRef === 'a' ? esc(r.ref) : '—'}</span> · ${esc(r.paciente || '—')}</span></a><small>${r.data ? new Date(r.data).toLocaleDateString('pt-BR') : ''}</small></td>
       <td class="two"><span class="l mono" style="font-size:12px" title="informada(s): ${esc(r.guiasInf.join(', '))}">${esc(r.guiasInf.join(', ') || '—')}</span><small class="mono" title="no sistema: ${esc(r.guiasSis.join(', '))}">${r.guiasSis.length ? 'sist.: ' + esc(r.guiasSis.join(', ')) : ''}</small></td>
       <td class="two"><span class="l" title="${esc(r.procInf.join('; '))}">${esc(r.procInf.join('; ') || '—')}</span><small title="${esc(r.procSis.join('; '))}">${esc(r.procSis.join('; ') || '—')}</small></td>
       <td class="num">${r.temInf ? brl(r.informado) : '—'}</td><td class="num">${r.temSis ? brl(r.apurado) : '—'}</td>
       <td class="num" style="color:${Math.abs(r.dif) < 0.05 ? 'var(--muted)' : r.dif > 0 ? 'var(--bad)' : 'var(--info)'}">${brl(r.dif)}</td>
       <td><span class="tag st-${r.status}" title="${ST_LBL[r.status]}">${ST_CURTO[r.status]}</span></td></tr>`).join('') : '<tr><td colspan="7" class="empty">Nada neste filtro.</td></tr>'}</tbody>
-    <tfoot><tr><td colspan="3">${n0(rows.length)} atendimento(s)</td><td class="num">${brl(rows.reduce((a, r) => a + r.informado, 0))}</td><td class="num">${brl(rows.reduce((a, r) => a + r.apurado, 0))}</td><td class="num">${brl(rows.reduce((a, r) => a + r.dif, 0))}</td><td></td></tr></tfoot>`;
+    <tfoot><tr><td colspan="3">${n0(rows.length)} atendimento(s) · clique no atendimento para abrir a linha na conferência</td><td class="num">${brl(rows.reduce((a, r) => a + r.informado, 0))}</td><td class="num">${brl(rows.reduce((a, r) => a + r.apurado, 0))}</td><td class="num">${brl(rows.reduce((a, r) => a + r.dif, 0))}</td><td></td></tr></tfoot>`;
 }
 
 /* ===================== enviado para pagamento ===================== */
@@ -594,10 +609,11 @@ const ORIG = [['todas', 'Todas'], ['dentista', 'Via guia'], ['atendimento', 'Via
 const ORIG_LBL = { dentista: 'Dentista (guia)', atendimento: 'Dentista (atendimento)', sistema: 'Sistema', manual: 'Manual', nao_identificado: 'Sem executor', conflito: 'Conflito', split: 'Dividida entre dentistas', regra: 'Regra por procedimento' };
 /* ===================== conferência das guias (uma linha por guia) ===================== */
 const DEC = { pendente: '⚠ Pendente', sistema: 'Manter sistema', informado: 'Usar valor informado', split: '÷ Dividir entre dentistas' };
-const RST = { divergencia: ['⚠ Divergência', 'st-outro'], diferenca: ['≠ Diferença de valor', 'st-dif'], sem_exec: ['Sem executor', 'st-dif'], exec_dif: ['Executor ≠ informante', 'st-outro'],
-  nao_localizado: ['Não localizado', 'st-nao_localizado'], match: ['✓ Match', 'st-ok'], resolvido: ['✓ Resolvido', 'st-ok'], sem_informe: ['Sem informe', 'st-so_sistema'], regra: ['Regra', 'st-so_sistema'] };
-const PEND_ST = new Set(['divergencia', 'diferenca', 'sem_exec', 'exec_dif', 'nao_localizado']);
-const RSEG = [['pend', '⚠ Pendências'], ['todos', 'Todas'], ['divergencia', 'Divergência'], ['diferenca', 'Diferença de valor'], ['sem_exec', 'Sem executor'], ['exec_dif', 'Executor ≠ informante'], ['nao_localizado', 'Não localizado'], ['match', 'Match'], ['resolvido', 'Resolvido'], ['sem_informe', 'Sem informe'], ['regra', 'Regra']];
+const RST = { match: ['✓ Match', 'st-ok'], dois: ['⚠ Dois dentistas informaram', 'st-outro'], valor: ['≠ Divergência de valor', 'st-dif'],
+  nao_planilha: ['Não encontrado na planilha', 'st-so_sistema'], nao_sistema: ['Não encontrado no sistema', 'st-nao_localizado'], resolvido: ['✓ Resolvido', 'st-ok'] };
+const ehPend = o => o.st === 'dois' || o.st === 'valor' || o.st === 'nao_sistema' || (o.st === 'nao_planilha' && o.semExec);
+const noFiltro = (o, f) => f === 'todos' || (f === 'pend' ? ehPend(o) : f === 'nao' ? (o.st === 'nao_planilha' || o.st === 'nao_sistema') : o.st === f);
+const RSEG = [['pend', '⚠ Pendências'], ['todos', 'Todas'], ['match', '✓ Match'], ['dois', 'Dois dentistas informaram'], ['valor', 'Divergência de valor'], ['nao', 'Não encontrado'], ['resolvido', 'Resolvido']];
 S.painel = { f: 'pend', page: 0 };
 S.gf = { dent: '', q: '' };
 if (!S.decGuia) S.decGuia = {};
@@ -649,12 +665,11 @@ function buildLinhasConf() {
     o.dif = o.nInf ? o.maxInf - o.sis : 0;
     o.dec = S.decGuia[o.k] || null;
     if (o.dec?.destino) o.st = 'resolvido';
-    else if (o.regra) o.st = 'regra';
-    else if (o.nInf >= 2) o.st = 'divergencia';
-    else if (o.nInf === 1 && Math.abs(o.dif) > tolV()) o.st = 'diferenca';
-    else if (semEx) o.st = 'sem_exec';
-    else if (o.nInf === 1) o.st = (o.executores.length === 1 && o.executores[0] === ids[0]) || o.split ? 'match' : 'exec_dif';
-    else o.st = 'sem_informe';
+    else if (o.regra) { o.st = 'match'; o.porRegra = true; }
+    else if (o.nInf >= 2) o.st = 'dois';
+    else if (o.nInf === 1 && Math.abs(o.dif) > tolV()) o.st = 'valor';
+    else if (o.nInf === 1) o.st = 'match';
+    else o.st = 'nao_planilha';
     o.resp = [...o.resp];
     o.busca = Core.norm([o.guia, o.paciente, ...o.procs, ...o.resp, o.lines[0]?.atendimento].join(' '));
     return o;
@@ -673,7 +688,7 @@ function buildLinhasConf() {
       const gs = rs.filter(o => o.inf[D] || o.executores.includes(D));
       gs.forEach(o => {
         if (o.dec?.destino || o.nInf >= 2) return;
-        if (['diferenca', 'sem_informe', 'exec_dif', 'match'].includes(o.st) && (o.inf[D] || (o.executores.length === 1 && o.executores[0] === D && !o.semExec))) {
+        if (['valor', 'nao_planilha', 'match'].includes(o.st) && (o.inf[D] || (o.executores.length === 1 && o.executores[0] === D && !o.semExec))) {
           o.st = 'match'; o.viaAt = { dentistaId: D, guias: rs.map(x => x.guia), inf, sis };
         }
       });
@@ -681,7 +696,7 @@ function buildLinhasConf() {
   });
   R.naoEncontradas.forEach(x => rows.push({ k: x.id, ne: x, guia: x.guia || ('atend. ' + x.atend), data: x.data, paciente: x.paciente, procs: [x.procedimento], resp: [], lines: [], sis: 0,
     inf: { [x.informanteId]: { valor: x.valor || 0, procs: [x.procedimento] } }, infIds: [x.informanteId], nInf: 1, maxInf: x.valor || 0, dif: x.valor || 0, executores: x.decisao?.dentistaId ? [x.decisao.dentistaId] : [],
-    st: x.decisao?.dentistaId || x.decisao?.descartado ? 'resolvido' : 'nao_localizado', busca: Core.norm([x.guia, x.atend, x.paciente, x.procedimento].join(' ')) }));
+    st: x.decisao?.dentistaId || x.decisao?.descartado ? 'resolvido' : 'nao_sistema', busca: Core.norm([x.guia, x.atend, x.paciente, x.procedimento].join(' ')) }));
   return rows;
 }
 function linhasFiltradas(all) {
@@ -725,11 +740,11 @@ function valorSelect(o) {
 function renderPainel() {
   const all = buildLinhasConf(); S.linhasConf = all;
   const base = linhasFiltradas(all), P = S.painel;
-  const cnt = k => k === 'todos' ? base.length : k === 'pend' ? base.filter(o => PEND_ST.has(o.st)).length : base.filter(o => o.st === k).length;
-  $('#segPainel').innerHTML = RSEG.filter(([k]) => k === 'todos' || k === 'pend' || cnt(k)).map(([k, t]) => `<button class="${P.f === k ? 'on' : ''}" data-pf="${k}">${t}<em>${n0(cnt(k))}</em></button>`).join('');
+  const cnt = k => base.filter(o => noFiltro(o, k)).length;
+  $('#segPainel').innerHTML = RSEG.map(([k, t]) => `<button class="${P.f === k ? 'on' : ''}" data-pf="${k}">${t}<em>${n0(cnt(k))}</em></button>`).join('');
   $('#segPainel').querySelectorAll('button').forEach(b => b.onclick = () => { P.f = b.dataset.pf; P.page = 0; renderPainel(); });
-  const ord = { divergencia: 0, diferenca: 1, sem_exec: 2, exec_dif: 3, nao_localizado: 4 };
-  const list = base.filter(o => P.f === 'todos' || (P.f === 'pend' ? PEND_ST.has(o.st) : o.st === P.f))
+  const ord = { dois: 0, valor: 1, nao_sistema: 2, nao_planilha: 3 };
+  const list = base.filter(o => noFiltro(o, P.f))
     .sort((a, b) => ((ord[a.st] ?? 9) - (ord[b.st] ?? 9)) || Math.abs(b.dif) - Math.abs(a.dif) || ((a.data || 0) - (b.data || 0)));
   const PG = 50, pages = Math.max(1, Math.ceil(list.length / PG)); if (P.page >= pages) P.page = pages - 1;
   const sl = list.slice(P.page * PG, (P.page + 1) * PG);
@@ -745,17 +760,17 @@ function renderPainel() {
       <td class="num">${o.ne ? '<span class="muted">—</span>' : brl(o.sis)}</td>
       <td class="num">${infCell(o)}</td>
       <td class="num" style="color:${!o.nInf || o.viaAt || Math.abs(o.dif) <= tolV() ? 'var(--muted)' : o.dif > 0 ? 'var(--bad)' : 'var(--info)'}">${o.viaAt ? `<span title="Bate pelo atendimento">≈ 0</span>` : o.nInf ? brl(o.dif) : '—'}</td>
-      <td><span class="tag ${RST[o.st][1]}" title="${o.nInf >= 2 ? `${o.nInf} dentistas informaram a guia na produção` : o.viaAt ? `Conferido pelo atendimento ${o.lines[0]?.atendimento}: informado ${brl(o.viaAt.inf)} = sistema ${brl(o.viaAt.sis)} (guias ${o.viaAt.guias.join(', ')})` : ''}">${RST[o.st][0]}${o.viaAt ? '*' : ''}</span>${o.dec ? ` <button class="btn ghost sm" data-gu="${esc(o.k)}" title="Desfazer decisão" style="padding:2px 6px">↺</button>` : ''}${o.st === 'resolvido' ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${o.dec?.destino ? (o.dec.destino.tipo === 'split' ? 'dividida entre dentistas' : 'executor escolhido') : 'executor associado'}${o.nInf && Math.abs(o.dif) > tolV() ? ` · paga o valor ${o.dec?.valor === 'informado' ? 'informado' : 'do sistema'}` : ''}</div>` : ''}</td>
+      <td><span class="tag ${RST[o.st][1]}" title="${o.nInf >= 2 ? `${o.nInf} dentistas informaram a guia na produção` : o.viaAt ? `Conferido pelo atendimento ${o.lines[0]?.atendimento}: informado ${brl(o.viaAt.inf)} = sistema ${brl(o.viaAt.sis)} (guias ${o.viaAt.guias.join(', ')})` : ''}">${RST[o.st][0]}${o.viaAt ? '*' : ''}</span>${o.dec ? ` <button class="btn ghost sm" data-gu="${esc(o.k)}" title="Desfazer decisão" style="padding:2px 6px">↺</button>` : ''}${(() => { const sg = sugestaoHist(o); const t = o.porRegra ? 'definida por regra (ex.: Consulta → CLINICA)' : o.st === 'nao_planilha' && !o.semExec ? `vai para ${esc(dentById(o.executores[0])?.nome || '')} (Resp. no sistema)` : o.st === 'nao_planilha' ? '⚠ escolha quem fez em Executor' : ''; return (sg || t) ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${sg ? `<span style="color:var(--info)">↪ ${esc(sg.txt)}</span>` : esc(t)}</div>` : ''; })()}${o.st === 'resolvido' ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${o.dec?.destino ? (o.dec.destino.tipo === 'split' ? 'dividida entre dentistas' : 'executor escolhido') : 'executor associado'}${o.nInf && Math.abs(o.dif) > tolV() ? ` · paga o valor ${o.dec?.valor === 'informado' ? 'informado' : 'do sistema'}` : ''}</div>` : ''}</td>
       <td>${valorSelect(o)}</td></tr>`).join('') : `<tr><td colspan="10" class="empty">${P.f === 'pend' ? '✓ Nenhuma pendência neste filtro.' : 'Nada neste filtro.'}</td></tr>`}</tbody>
     <tfoot><tr><td colspan="5">${n0(list.length)} guia(s)</td><td class="num">${brl(list.reduce((a, o) => a + o.sis, 0))}</td><td class="num">${brl(list.reduce((a, o) => a + (o.maxInf || 0), 0))}</td><td></td><td></td><td></td></tr></tfoot>`;
   $('#pagerPainel').innerHTML = `<span>${n0(list.length)} guia(s)</span><span class="sp"></span><button class="btn sm" ${P.page ? '' : 'disabled'} data-pp="-1">‹</button><span>pág. ${P.page + 1} de ${pages}</span><button class="btn sm" ${P.page < pages - 1 ? '' : 'disabled'} data-pp="1">›</button>`;
   $('#pagerPainel').querySelectorAll('[data-pp]').forEach(b => b.onclick = () => { P.page += +b.dataset.pp; renderPainel(); });
   // KPI de pendências a partir da tabela
-  const pend = all.filter(o => PEND_ST.has(o.st));
+  const pend = all.filter(ehPend);
   const kp = $('#kpiPend'); if (kp) { kp.classList.toggle('bad', pend.length > 0); kp.querySelector('b').textContent = n0(pend.length);
-    kp.querySelector('small').textContent = `${n0(pend.filter(o => o.st === 'divergencia').length)} diverg. · ${n0(pend.filter(o => o.st === 'diferenca').length)} dif. valor · ${n0(pend.filter(o => o.st === 'sem_exec').length)} sem exec. · ${n0(pend.filter(o => o.st === 'nao_localizado').length)} não localiz.`; }
+    kp.querySelector('small').textContent = `${n0(pend.filter(o => o.st === 'dois').length)} dois dentistas · ${n0(pend.filter(o => o.st === 'valor').length)} diverg. de valor · ${n0(pend.filter(o => o.st === 'nao_planilha' || o.st === 'nao_sistema').length)} não encontrados`; }
   bindConf($('#tblPainel'));
-  renderAutoResp();
+  renderAjuda(list);
   applyRO();
 }
 function bindConf(T) {
@@ -788,63 +803,251 @@ function bindConf(T) {
   });
 }
 /* ===== ações em massa ===== */
-function analisarResp() {
-  const out = { aplicar: [], genericos: [], semCadastro: [], fora: [] };
-  (S.linhasConf || []).filter(o => o.st === 'divergencia' || (o.st === 'sem_exec' && !o.nInf)).forEach(o => {
-    const resp = o.resp.filter(r => !GENERIC.test(r));
-    if (!resp.length) { out.genericos.push(o); return; }
-    const d = resp.map(r => Core.matchDentist(r, ativos())).find(Boolean);
-    if (!d) { out.semCadastro.push(o); return; }
-    if (o.st === 'sem_exec' || o.infIds.includes(d.id)) out.aplicar.push([o, d]); else out.fora.push(o);
-  });
-  return out;
+/* ===================== glosas ===================== */
+const GSIT = { recusado: ['Recusado', 'st-nao_localizado'], sem_recurso: ['Não tem como recusar', 'st-nao_localizado'], pendencia: ['Com pendência (recurso)', 'st-dif'], outro: ['Outro', 'st-so_sistema'] };
+const GACAO = { descontar: 'Descontar', aguardar: 'Aguardar recurso', nao: 'Não descontar' };
+S.gloView = { f: 'todas', dent: '', q: '', page: 0 };
+function montarGlosa(nome, sheets, arquivoId) {
+  const a = Core.analyzeGlosaWorkbook(sheets);
+  S.glosa = { nome, arquivoId, itens: a.itens, lotes: a.lotes, hist: {} };
 }
-$('#btnAutoResp').onclick = async () => {
-  if (S.ro || !S.result) return;
-  const a = analisarResp();
-  const total = a.aplicar.length + a.genericos.length + a.semCadastro.length + a.fora.length;
-  if (!total) { toast('Nenhuma divergência para resolver.'); return; }
-  const txt = `Das ${n0(total)} guia(s) com divergência ou sem executor:` +
-    `\n✓ ${n0(a.aplicar.length)} vão para o dentista do "Resp. no sistema" (valor do sistema)` +
-    (a.genericos.length ? `\n⚠ ${n0(a.genericos.length)} ficam pendentes: Resp. genérico (Clínico Geral, Sem Dentista…)` : '') +
-    (a.semCadastro.length ? `\n⚠ ${n0(a.semCadastro.length)} ficam pendentes: Resp. no sistema não está cadastrado` : '') +
-    (a.fora.length ? `\n⚠ ${n0(a.fora.length)} ficam pendentes: Resp. no sistema não está entre os dentistas que informaram` : '') +
-    `\n\nConsultas continuam com a regra (CLINICA). Dá para desfazer.`;
-  if (!a.aplicar.length) { await dialog('Nada a associar automaticamente', txt, { okText: 'Entendi' }); return; }
-  if (!await dialog('Associar pelo Resp. no sistema?', txt, { okText: `Associar ${n0(a.aplicar.length)} guia(s)` })) return;
-  a.aplicar.forEach(([o, d]) => { S.decGuia[o.k] = { valor: 'sistema', destino: { tipo: 'dentista', dentistaId: d.id } }; S.decGuiaAuto[o.k] = true; });
-  run(false); salvar(); toast(`${n0(a.aplicar.length)} guia(s) associadas · ${n0(total - a.aplicar.length)} continuam pendentes`);
-};
-$('#btnAutoRespUndo').onclick = async () => {
-  const ks = Object.keys(S.decGuiaAuto);
-  if (!ks.length) { toast('Não há associações automáticas para desfazer.'); return; }
-  if (!await dialog('Desfazer associação automática?', `${n0(ks.length)} guia(s) voltam a ficar pendentes. Decisões manuais não são afetadas.`, { okText: 'Desfazer' })) return;
-  ks.forEach(k => { delete S.decGuia[k]; delete S.decGuiaAuto[k]; });
-  run(false); salvar(); toast('Associação automática desfeita');
-};
-function renderAutoResp() {
-  const n = (S.linhasConf || []).filter(o => o.st === 'divergencia' || (o.st === 'sem_exec' && !o.nInf)).length;
-  const u = Object.keys(S.decGuiaAuto).length;
-  $('#btnAutoResp').innerHTML = `⚡ Associar pelo Resp. no sistema${n ? ` <span class="cnt" style="background:var(--warnSoft);color:var(--warn)">${n0(n)}</span>` : ''}`;
-  $('#btnAutoResp').disabled = S.ro || !n;
-  $('#btnAutoRespUndo').classList.toggle('hide', !u || S.ro);
-  $('#btnAutoRespUndo').textContent = `Desfazer (${n0(u)})`;
+async function buscarExecGlosa() {
+  if (!S.glosa) return;
+  const gs = [...new Set(S.glosa.itens.map(i => i.guia).filter(Boolean))], H = {};
+  try {
+    for (let i = 0; i < gs.length; i += 80) {
+      const r = await sb.from('guias_index').select('competencia,guia,dentista_id,paciente,valor').eq('tipo', 'sistema').in('guia', gs.slice(i, i + 80)).order('competencia', { ascending: false });
+      if (r.error) throw r.error;
+      r.data.forEach(x => (H[x.guia] = H[x.guia] || []).push(x));
+    }
+  } catch (e) { console.warn('glosa índice', e); }
+  S.glosa.hist = H;
+  if (S.result) run(false); else renderGlosa();
 }
-function bulkDiv(valor) {
-  if (S.ro) return;
-  let n = 0;
-  linhasFiltradas(S.linhasConf || []).filter(o => o.st === 'diferenca' && o.nInf === 1).forEach(o => { S.decGuia[o.k] = { valor, destino: { tipo: 'dentista', dentistaId: o.infIds[0] } }; n++; });
-  if (!n) { toast('Nenhuma diferença de valor com um único dentista.'); return; }
-  run(false); salvar(); toast(`${n} guia(s) resolvidas: valor ${valor === 'informado' ? 'informado' : 'do sistema'} para quem informou. Divergências (2+ dentistas) ficam para decidir.`);
+function glosaInfo(it) {
+  const dec = S.glosaDec[it.id] || {};
+  let exec = null, fonte = '', paciente = '';
+  const cur = S.result ? [...S.result.linhas, ...S.result.pendentes].find(l => l.guia === it.guia && l.executorId) : null;
+  const hs = (S.glosa?.hist[it.guia] || []).filter(h => h.dentista_id);
+  const regra = S.cad.regras.find(r => r.ativo && dentById(r.dentistaId)?.ativo && Core.norm(it.procedimento).includes(Core.norm(r.termo)));
+  if (dec.dentistaId) { exec = dec.dentistaId === '_x' ? null : dec.dentistaId; fonte = 'escolhido por você'; }
+  else if (regra) { exec = regra.dentistaId; fonte = `regra: ${regra.termo}`; }
+  else if (cur) { exec = cur.executorId; fonte = 'executor na conciliação deste mês'; paciente = cur.paciente; }
+  else if (hs.length) { exec = hs[0].dentista_id; fonte = `executor em ${compLabel(String(hs[0].competencia).slice(0, 10))}`; paciente = hs[0].paciente; }
+  else { const d = it.dentistaArq && !GENERIC.test(it.dentistaArq) ? Core.matchDentist(it.dentistaArq, ativos()) : null; if (d) { exec = d.id; fonte = 'dentista responsável no arquivo de glosas'; } }
+  if (!paciente) paciente = (S.glosa?.hist[it.guia] || [])[0]?.paciente || '';
+  const padrao = it.sit === 'recusado' || it.sit === 'sem_recurso' ? 'descontar' : 'aguardar';
+  const acao = dec.acao || padrao;
+  const d = dentById(exec), esp = d ? S.cad.especialidades.find(e => e.id === d.especialidadeId) : null;
+  const forma = d?.forma || esp?.forma || 'percentual', pct = Number(d?.valor ?? esp?.valor ?? 0);
+  const impacto = acao === 'descontar' && exec && forma === 'percentual' ? -it.valor * pct / 100 : 0;
+  return { exec, fonte, paciente, acao, padrao, impacto, forma, pct };
 }
-$('#bulkSis').onclick = () => bulkDiv('sistema');
-$('#bulkInf').onclick = () => bulkDiv('informado');
-$('#bulkNE').onclick = () => {
-  if (S.ro) return;
-  let n = 0; S.result.naoEncontradas.forEach(x => { if (!S.lancamentos[x.id] && x.informanteId) { S.lancamentos[x.id] = { dentistaId: x.informanteId, valor: x.valor ?? 0 }; n++; } });
-  if (!n) { toast('Nenhum lançamento não localizado pendente.'); return; }
-  run(false); salvar(); toast(`${n} lançamento(s) atribuído(s) a quem informou`);
+function glosasParaMotor() {
+  if (!S.glosa) return [];
+  return S.glosa.itens.map(it => ({ it, g: glosaInfo(it) })).filter(x => x.g.acao === 'descontar' && x.g.exec).map(({ it, g }) => ({ id: it.id, dentistaId: g.exec, valor: it.valor, guia: it.guiaRaw, paciente: g.paciente, procedimento: it.procedimento }));
+}
+function renderGlosa() {
+  const G = S.glosa, V = S.gloView;
+  $('#glosaArq').innerHTML = G ? `<div class="row" style="margin-top:12px;gap:8px"><span class="chip ok">✓ ${esc(G.nome)}</span>${G.lotes.map(l => `<span class="chip">${esc(l.nome)}: ${n0(l.n)} guia(s) · ${brl(l.total)}</span>`).join('')}<span class="sp"></span><button class="btn sm ghost danger" id="gloRemover" ${S.ro ? 'disabled' : ''}>Remover arquivo</button></div>` : '';
+  $('#glosaBody').classList.toggle('hide', !G);
+  $('#glosaEmpty').classList.toggle('hide', !!S.conc && !S.conc.novo && !!G);
+  $('#glosaEmpty').innerHTML = !S.conc || S.conc.novo ? '<b>Abra a competência primeiro</b>Na aba Conciliação, escolha o mês e suba a planilha do sistema. Depois volte aqui para subir as glosas.' : '<b>Nenhum arquivo de glosas neste mês</b>Suba o arquivo acima (.xlsx, .xls ou .csv). Ele precisa ter as colunas Número da Guia, Situação e Valor.';
+  const rm = $('#gloRemover'); if (rm) rm.onclick = async () => {
+    if (!await dialog('Remover arquivo de glosas?', 'As glosas saem deste mês e os descontos na comissão são desfeitos. O arquivo continua guardado no histórico.', { okText: 'Remover' })) return;
+    try { await q(sb.from('conciliacao_arquivos').update({ ativo: false }).eq('id', G.arquivoId), 'Remover glosas'); S.glosa = null; S.glosaDec = {}; if (S.result) run(false); salvar(); renderGlosa(); toast('Arquivo de glosas removido'); } catch (e) { fail(e); }
+  };
+  if (!G) return;
+  const all = G.itens.map(it => ({ it, g: glosaInfo(it) }));
+  const soma = xs => xs.reduce((a, x) => a + x.it.valor, 0);
+  const by = k => all.filter(x => x.it.sit === k);
+  const desc = all.filter(x => x.g.acao === 'descontar' && x.g.exec), impacto = all.reduce((a, x) => a + x.g.impacto, 0);
+  const semExec = all.filter(x => !x.g.exec);
+  const k = (t, v, sub, cls = '') => `<div class="kpi ${cls}"><span>${t}</span><b>${v}</b><small>${sub}</small></div>`;
+  $('#glosaKpis').innerHTML = k('Total glosado', brl(soma(all)), `${n0(all.length)} guia(s)`) + k('Recusado', brl(soma(by('recusado'))), `${n0(by('recusado').length)} guia(s) · perda definitiva`)
+    + k('Não tem como recusar', brl(soma(by('sem_recurso'))), `${n0(by('sem_recurso').length)} guia(s) · perda definitiva`) + k('Com pendência', brl(soma(by('pendencia'))), `${n0(by('pendencia').length)} guia(s) · ainda dá para recorrer`)
+    + k('Descontado na comissão', brl(impacto), `${n0(desc.length)} guia(s) · ${brl(soma(desc))} saem da base`, impacto ? 'bad' : '') + k('Sem executor', n0(semExec.length), semExec.length ? 'escolha o executor na linha' : 'todas identificadas', semExec.length ? 'bad' : '');
+  $('#glosaAjuda').innerHTML = `<div class="aj-txt"><b>Como funciona:</b> o convênio não pagou essas guias. O sistema acha quem executou cada uma (pela conciliação deste mês, pelos meses anteriores ou pelo dentista do arquivo) e:
+    <ul style="margin:6px 0 0 18px;padding:0"><li><b>Recusado</b> e <b>Não tem como recusar</b>: perda definitiva, então a glosa é <b>descontada da comissão</b> de quem executou neste mês.</li><li><b>Com pendência</b>: ainda dá para recorrer, então fica <b>aguardando</b>. Se o recurso for negado, mude a Ação para "Descontar".</li></ul>
+    <p class="aj-obs">Você pode trocar o Executor e a Ação em qualquer linha. O desconto aparece na coluna Glosas da comissão (aba Resultado). Desconte cada glosa em um mês só.</p></div>${S.result ? '' : '<p class="aj-obs" style="color:var(--warn)">⚠ Faça a conciliação do mês para os descontos entrarem na comissão.</p>'}`;
+  const segs = [['todas', 'Todas', all.length], ['recusado', 'Recusado', by('recusado').length], ['sem_recurso', 'Não tem como recusar', by('sem_recurso').length], ['pendencia', 'Com pendência', by('pendencia').length], ['descontar', 'Descontadas', desc.length], ['sem_exec', 'Sem executor', semExec.length]];
+  $('#segGlosa').innerHTML = segs.map(([kk, t, c]) => `<button class="${V.f === kk ? 'on' : ''}" data-gf="${kk}">${t}<em>${n0(c)}</em></button>`).join('');
+  $('#segGlosa').querySelectorAll('button').forEach(b => b.onclick = () => { V.f = b.dataset.gf; V.page = 0; renderGlosa(); });
+  $('#gloDent').innerHTML = `<option value="">Todos os executores</option>` + ativos().map(d => `<option value="${d.id}">${esc(d.nome)}</option>`).join(''); $('#gloDent').value = V.dent;
+  const qq = Core.norm(V.q);
+  const list = all.filter(x => (V.f === 'todas' || (V.f === 'descontar' ? x.g.acao === 'descontar' && x.g.exec : V.f === 'sem_exec' ? !x.g.exec : x.it.sit === V.f)) && (!V.dent || x.g.exec === V.dent)
+    && (!qq || Core.norm([x.it.guiaRaw, x.it.atend, x.g.paciente, x.it.procedimento, x.it.dentistaArq, x.it.motivo, x.it.lote].join(' ')).includes(qq)));
+  S.gloList = list;
+  const PG = 50, pages = Math.max(1, Math.ceil(list.length / PG)); if (V.page >= pages) V.page = pages - 1;
+  const sl = list.slice(V.page * PG, (V.page + 1) * PG);
+  $('#tblGlosa').innerHTML = `<colgroup><col style="width:9%"><col style="width:10%"><col style="width:12%"><col style="width:10%"><col style="width:14%"><col style="width:10%"><col style="width:12%"><col style="width:7%"><col style="width:6%"><col style="width:10%"></colgroup>
+    <thead><tr><th>Guia</th><th>Paciente</th><th>Procedimento</th><th>Dentista no arquivo</th><th>Executor</th><th>Situação</th><th>Motivo</th><th class="num">Valor</th><th class="num" title="Quanto sai da comissão do executor">Comissão</th><th>Ação</th></tr></thead>
+    <tbody>${sl.length ? sl.map(({ it, g }) => `<tr>
+      <td class="two"><span class="l mono" style="font-size:12px">${esc(it.guiaRaw)}</span><small>${it.data ? new Date(it.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }).slice(0, 5) : ''}${it.atend ? ' · ' + esc(it.atend) : ''} · ${esc(it.lote.replace(/^glosas? de /i, ''))}</small></td>
+      <td>${esc(g.paciente || '—')}</td><td>${esc(it.procedimento || '—')}${it.convenio ? `<div class="muted" style="font-size:11px">${esc(it.convenio)}</div>` : ''}</td>
+      <td class="${!it.dentistaArq || GENERIC.test(it.dentistaArq) ? 'muted' : ''}">${esc(it.dentistaArq || '—')}</td>
+      <td><select class="inp" data-gle="${esc(it.id)}" style="${g.exec ? '' : 'border-color:var(--warn)'}"><option value="_x" ${g.exec ? '' : 'selected'}>${g.exec ? '— sem executor —' : '⚠ escolher…'}</option>${ativos().map(d => `<option value="${d.id}" ${d.id === g.exec ? 'selected' : ''}>${esc(d.nome)}</option>`).join('')}</select>${g.exec ? `<div class="muted" style="font-size:11px;margin-top:3px">${esc(g.fonte)}</div>` : ''}</td>
+      <td><span class="tag ${GSIT[it.sit][1]}">${esc(it.situacao || GSIT[it.sit][0])}</span></td>
+      <td style="font-size:12px">${esc(it.motivo || '—')}</td>
+      <td class="num">${brl(it.valor)}</td><td class="num" style="color:${g.impacto ? 'var(--bad)' : 'var(--muted)'}" title="${g.exec && g.forma !== 'percentual' ? 'Executor não ganha por %: a glosa não muda a comissão' : g.exec ? g.pct + '% do valor' : ''}">${g.impacto ? brl(g.impacto) : '—'}</td>
+      <td><select class="inp" data-gla="${esc(it.id)}">${Object.entries(GACAO).map(([kk, t]) => `<option value="${kk}" ${g.acao === kk ? 'selected' : ''}>${t}</option>`).join('')}</select></td></tr>`).join('') : '<tr><td colspan="10" class="empty">Nada neste filtro.</td></tr>'}</tbody>
+    <tfoot><tr><td colspan="7">${n0(list.length)} guia(s)</td><td class="num">${brl(list.reduce((a, x) => a + x.it.valor, 0))}</td><td class="num">${brl(list.reduce((a, x) => a + x.g.impacto, 0))}</td><td></td></tr></tfoot>`;
+  $('#pagerGlosa').innerHTML = `<span>${n0(list.length)} guia(s)</span><span class="sp"></span><button class="btn sm" ${V.page ? '' : 'disabled'} data-gp="-1">‹</button><span>pág. ${V.page + 1} de ${pages}</span><button class="btn sm" ${V.page < pages - 1 ? '' : 'disabled'} data-gp="1">›</button>`;
+  $('#pagerGlosa').querySelectorAll('[data-gp]').forEach(b => b.onclick = () => { V.page += +b.dataset.gp; renderGlosa(); });
+  const setDec = (id, patch) => { S.glosaDec[id] = { ...(S.glosaDec[id] || {}), ...patch }; if (S.result) run(false); else renderGlosa(); salvar(); };
+  $('#tblGlosa').querySelectorAll('[data-gle]').forEach(x => x.onchange = () => setDec(x.dataset.gle, { dentistaId: x.value }));
+  $('#tblGlosa').querySelectorAll('[data-gla]').forEach(x => x.onchange = () => setDec(x.dataset.gla, { acao: x.value }));
+  if (S.ro) document.querySelectorAll('#tab-glosa select:not(#gloDent), #tab-glosa input[type=file], #gloRemover').forEach(el => el.disabled = true);
+}
+$('#gloDent').onchange = e => { S.gloView.dent = e.target.value; S.gloView.page = 0; renderGlosa(); };
+let gloT = null; $('#gloBusca').oninput = e => { clearTimeout(gloT); gloT = setTimeout(() => { S.gloView.q = e.target.value; S.gloView.page = 0; renderGlosa(); }, 250); };
+$('#gloExport').onclick = () => {
+  const L = S.gloList || []; const wb = XLSX.utils.book_new();
+  abaXlsx(wb, L.map(({ it, g }) => ({ Lote: it.lote, Guia: it.guiaRaw, Atendimento: it.atend, 'Data de atendimento': it.data ? new Date(it.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '', Paciente: g.paciente, Procedimento: it.procedimento, Convênio: it.convenio, 'Dentista no arquivo': it.dentistaArq, Executor: dentById(g.exec)?.nome || '', 'Executor identificado por': g.exec ? g.fonte : '', Situação: it.situacao, Motivo: it.motivo, Valor: +it.valor.toFixed(2), Ação: GACAO[g.acao], 'Impacto na comissão': +g.impacto.toFixed(2) })), 'Glosas');
+  XLSX.writeFile(wb, `Glosas_${nomeArq(compLabel(S.conc.competencia))}.xlsx`);
 };
+setupDrop($('#dropGlosa'), $('#fileGlosa'), async files => {
+  const f = files[0]; if (!f) return;
+  if (!S.conc || S.conc.novo && !S.sys) { toast('Abra a competência e suba a planilha do sistema primeiro.'); return; }
+  try {
+    const sheets = await parseBook(await f.arrayBuffer());
+    const a = Core.analyzeGlosaWorkbook(sheets);
+    if (!a.itens.length) { await dialog('Não achei glosas nesse arquivo', 'O arquivo precisa ter uma aba com as colunas Número da Guia, Situação e Valor (como "Glosas de Agosto").', { okText: 'Entendi' }); return; }
+    const antigo = S.glosa?.arquivoId;
+    const arq = await enviarArquivo(f, 'glosa');
+    if (antigo) await q(sb.from('conciliacao_arquivos').update({ ativo: false }).eq('id', antigo), 'Arquivo anterior');
+    montarGlosa(f.name, sheets, arq.id); S.glosaDec = {};
+    salvar(); toast(`${n0(a.itens.length)} glosa(s) carregadas`);
+    await buscarExecGlosa(); renderGlosa();
+  } catch (e) { fail(e); }
+});
+
+/* ===================== índice de guias + busca no histórico ===================== */
+const ymd = d => { if (!d) return null; const x = d instanceof Date ? d : new Date(d); if (isNaN(x)) return null; return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+const r2 = v => v == null || isNaN(+v) ? null : Math.round(+v * 100) / 100;
+async function gravarIndice() {
+  if (!S.conc?.id || S.conc.novo || !S.sys || !S.result) return;
+  const cid = S.conc.id, comp = S.conc.competencia, rows = [];
+  [...S.result.linhas, ...S.result.pendentes.filter(l => l.pend)].forEach(l => rows.push({ conciliacao_id: cid, competencia: comp, tipo: 'sistema', guia: l.guia || null, atendimento: l.atendimento || null, dentista_id: l.executorId || null, dentista_nome: l.dentistaSistema || null, paciente: l.paciente || null, procedimento: l.procedimento || null, valor: r2(l.valor), data: ymd(l.data), situacao: l.situacao || null }));
+  S.denFiles.filter(f => f.dentistaId).forEach(f => (f.itens || []).forEach(it => rows.push({ conciliacao_id: cid, competencia: comp, tipo: 'informado', guia: it.guia || null, atendimento: it.atend || null, dentista_id: f.dentistaId, dentista_nome: dentById(f.dentistaId)?.nome || null, paciente: it.paciente || null, procedimento: it.procedimento || null, valor: r2(it.valor), data: ymd(it.data), situacao: null })));
+  const del = await sb.from('guias_index').delete().eq('conciliacao_id', cid); if (del.error) throw del.error;
+  for (let i = 0; i < rows.length; i += 500) { const r = await sb.from('guias_index').insert(rows.slice(i, i + 500)); if (r.error) throw r.error; }
+}
+async function garantirIndice() {
+  if (!S.conc?.id || S.conc.novo || !S.result) return;
+  const r = await sb.from('guias_index').select('id', { count: 'exact', head: true }).eq('conciliacao_id', S.conc.id);
+  if (r.error) throw r.error;
+  if (!r.count) await gravarIndice();
+}
+async function carregarHistorico() {
+  const H = { sis: {}, sisAt: {}, inf: {}, ok: false }; S.hist = H;
+  if (!S.result) return;
+  const info = $('#histInfo');
+  try {
+    const cid = S.conc?.id || '00000000-0000-0000-0000-000000000000';
+    const ne = S.result.naoEncontradas;
+    const gNE = [...new Set(ne.map(x => x.guiaN).filter(Boolean))], aNE = [...new Set(ne.map(x => x.atend).filter(Boolean))];
+    const gNP = [...new Set((S.linhasConf || buildLinhasConf()).filter(o => o.st === 'nao_planilha').map(o => o.lines[0]?.guia).filter(Boolean))];
+    const busca = async (tipo, col, vals, alvo) => {
+      for (let i = 0; i < vals.length; i += 80) {
+        const r = await sb.from('guias_index').select('competencia,guia,atendimento,dentista_id,dentista_nome,valor').eq('tipo', tipo).in(col, vals.slice(i, i + 80)).neq('conciliacao_id', cid).order('competencia', { ascending: false });
+        if (r.error) throw r.error;
+        r.data.forEach(x => { const k = x[col]; (alvo[k] = alvo[k] || []).push(x); });
+      }
+    };
+    await busca('sistema', 'guia', gNE, H.sis); await busca('sistema', 'atendimento', aNE, H.sisAt); await busca('informado', 'guia', gNP, H.inf);
+    H.ok = true;
+    const n = Object.keys(H.sis).length + Object.keys(H.sisAt).length + Object.keys(H.inf).length;
+    if (info) info.textContent = `🔎 Busca nos outros meses: ${n0(n)} guia(s) encontradas`;
+  } catch (e) { if (info) info.textContent = '⚠ Busca nos outros meses indisponível (rode o SQL da atualização)'; console.warn(e); }
+  if (S.result) renderPainel();
+}
+async function atualizarHistorico(regravar) {
+  try { if (regravar) await gravarIndice(); else await garantirIndice(); } catch (e) { console.warn('índice', e); }
+  await carregarHistorico();
+}
+
+/* ===================== o que fazer (ações em lote explicadas) ===================== */
+S.undoLote = []; S.hist = S.hist || { sis: {}, sisAt: {}, inf: {}, ok: false };
+const compTxt = c => c ? compLabel(String(c).slice(0, 10)) : '';
+function sugestaoHist(o) {
+  if (o.st === 'nao_sistema') {
+    const x = o.ne, hs = (S.hist.sis[x.guiaN] || []).concat(x.atend ? S.hist.sisAt[x.atend] || [] : []);
+    if (hs.length) return { tipo: 'outro_mes', txt: `Está na planilha da clínica de ${compTxt(hs[0].competencia)}`, comp: hs[0].competencia };
+    return S.hist.ok ? { tipo: 'nenhum', txt: 'Não aparece em nenhum outro mês carregado' } : null;
+  }
+  if (o.st === 'nao_planilha') {
+    const hs = (S.hist.inf[o.lines[0]?.guia] || []).filter(h => dentById(h.dentista_id)?.ativo);
+    if (hs.length) return { tipo: 'informado_outro_mes', txt: `Informada por ${dentById(hs[0].dentista_id).nome} na produção de ${compTxt(hs[0].competencia)}`, dentistaId: hs[0].dentista_id };
+    return null;
+  }
+  return null;
+}
+function respCadastrado(o) { const r = o.resp.filter(x => !GENERIC.test(x)); return r.map(x => Core.matchDentist(x, ativos())).find(Boolean) || null; }
+function lote(titulo, texto, okText, aplicar) {
+  return async () => {
+    if (S.ro) return;
+    if (!await dialog(titulo, texto, { okText })) return;
+    S.undoLote.push(JSON.stringify({ decGuia: S.decGuia, decGuiaAuto: S.decGuiaAuto, lancamentos: S.lancamentos }));
+    const n = aplicar();
+    run(false); salvar(); toast(`${n0(n)} guia(s) resolvidas. Se precisar, use "Desfazer última ação".`);
+  };
+}
+function renderAjuda(list) {
+  const el = $('#painelAjuda'); if (!el) return;
+  const P = S.painel, all = linhasFiltradas(S.linhasConf || []), pend = all.filter(ehPend);
+  const filtro = S.gf.dent || S.gf.q ? '<p class="aj-obs">As ações valem só para as guias do filtro atual (dentista/busca no topo da tela).</p>' : '';
+  const btn = (id, txt, n, pri) => `<button class="btn sm ${pri ? 'pri' : ''}" id="${id}" ${!n || S.ro ? 'disabled' : ''}>${txt} <b>(${n0(n)})</b></button>`;
+  const undo = S.undoLote.length ? `<button class="btn sm ghost" id="ajUndo">↺ Desfazer última ação em lote</button>` : '';
+  const c = k => pend.filter(o => o.st === k).length;
+  let h = '';
+  if (P.f === 'pend') {
+    const nNao = pend.filter(o => o.st === 'nao_planilha' || o.st === 'nao_sistema').length;
+    h = pend.length ? `<b>${n0(pend.length)} guia(s) precisam da sua decisão.</b> Clique em um tipo para ver o que fazer:
+      <div class="aj-tipos">${c('dois') ? `<a href="#" data-aj="dois">⚠ Dois dentistas informaram <b>${n0(c('dois'))}</b></a>` : ''}${c('valor') ? `<a href="#" data-aj="valor">≠ Divergência de valor <b>${n0(c('valor'))}</b></a>` : ''}${nNao ? `<a href="#" data-aj="nao">Não encontrado <b>${n0(nNao)}</b></a>` : ''}</div>`
+      : '<b>✓ Nenhuma pendência.</b> Todas as guias bateram ou já foram decididas. Confira a comissão e feche o mês.';
+  } else if (P.f === 'dois') {
+    h = `<b>Dois dentistas informaram a mesma guia.</b> Só você sabe quem fez, então a decisão é linha a linha:
+      <ol><li>Na coluna <b>Executor</b>, escolha o dentista que atendeu.</li><li>Se os dois atenderam, escolha <b>÷ Dividir entre dentistas</b> e informe a parte de cada um.</li><li>Se o valor for diferente do sistema, escolha também o <b>Valor a pagar</b>.</li></ol>`;
+  } else if (P.f === 'valor') {
+    const vs = all.filter(o => o.st === 'valor');
+    h = `<b>O valor que o dentista informou é diferente do valor do sistema.</b> Escolha qual valor vale para a comissão. Pode ser linha a linha (coluna <b>Valor a pagar</b>) ou todas de uma vez:
+      <div class="aj-acoes">${btn('ajValSis', 'Pagar o valor do sistema em todas', vs.length, true)}${btn('ajValInf', 'Pagar o valor que o dentista informou em todas', vs.length)}</div>${filtro}`;
+  } else if (P.f === 'nao') {
+    const np = all.filter(o => o.st === 'nao_planilha' && o.semExec), ns = all.filter(o => o.st === 'nao_sistema');
+    const npHist = np.filter(o => sugestaoHist(o)?.dentistaId), npResp = np.filter(o => !sugestaoHist(o)?.dentistaId && respCadastrado(o));
+    const nsOutro = ns.filter(o => sugestaoHist(o)?.tipo === 'outro_mes'), nsResto = ns.filter(o => sugestaoHist(o)?.tipo !== 'outro_mes');
+    const semSug = np.length - npHist.length - npResp.length;
+    h = `<div class="aj-grid"><div><b>Está na planilha da clínica, mas nenhum dentista informou</b> <span class="muted">(${n0(np.length)} sem executor)</span>
+        <p>O sistema procurou essas guias nas produções dos outros meses.</p>
+        <div class="aj-acoes">${btn('ajNpHist', 'Dar para quem informou em outro mês', npHist.length, true)}${btn('ajNpResp', 'Dar para o Resp. no sistema', npResp.length)}</div>
+        ${semSug ? `<p class="aj-obs">${n0(semSug)} guia(s) têm responsável genérico (ex.: Clínico Geral) e não foram achadas em outro mês: escolha o <b>Executor</b> na linha.</p>` : ''}</div>
+      <div><b>O dentista informou, mas a guia não está na planilha da clínica deste mês</b> <span class="muted">(${n0(ns.length)})</span>
+        <p>O sistema procurou essas guias nas planilhas da clínica dos outros meses.</p>
+        <div class="aj-acoes">${btn('ajNsOutro', 'Não considerar as que já estão em outro mês', nsOutro.length, true)}${btn('ajNsPagar', 'Pagar a quem informou as demais', nsResto.length)}</div>
+        <p class="aj-obs">Ou decida na linha, na coluna <b>Executor</b> (escolha o dentista ou "Não considerar").</p></div></div>${filtro}`;
+    S._aj = { npHist, npResp, nsOutro, nsResto };
+  } else if (P.f === 'match') {
+    h = '<b>Guias que bateram:</b> um dentista informou e o valor confere com o sistema (Match* = confere somando as guias do mesmo atendimento). Também entram aqui as guias definidas por regra (ex.: Consulta → CLINICA). Nada a fazer.';
+  } else if (P.f === 'resolvido') {
+    h = '<b>Guias que você já decidiu.</b> Embaixo do status aparece o que foi decidido. Para mudar uma, clique no ↺ ao lado do status.';
+  } else {
+    h = 'Todas as guias do mês. Use os filtros acima para ver cada tipo e o que fazer.';
+  }
+  el.innerHTML = `<div class="aj-txt">${h}</div>${undo ? `<div class="aj-acoes">${undo}</div>` : ''}`;
+  el.querySelectorAll('[data-aj]').forEach(a => a.onclick = e => { e.preventDefault(); P.f = a.dataset.aj; P.page = 0; renderPainel(); });
+  const on = (id, fn) => { const b = $('#' + id); if (b) b.onclick = fn; };
+  const vs = all.filter(o => o.st === 'valor');
+  const setV = valor => () => { vs.forEach(o => { S.decGuia[o.k] = { valor, destino: { tipo: 'dentista', dentistaId: o.infIds[0] } }; }); return vs.length; };
+  on('ajValSis', lote('Pagar o valor do sistema?', `As ${n0(vs.length)} guia(s) com divergência de valor vão para o dentista que informou, com o valor que a clínica faturou.`, 'Pagar valor do sistema', setV('sistema')));
+  on('ajValInf', lote('Pagar o valor informado?', `As ${n0(vs.length)} guia(s) com divergência de valor vão para o dentista que informou, com o valor que ele informou.`, 'Pagar valor informado', setV('informado')));
+  const A = S._aj || {};
+  on('ajNpHist', lote('Dar para quem informou em outro mês?', `${n0(A.npHist?.length)} guia(s) da clínica foram informadas por um dentista na produção de outro mês. Elas vão para esse dentista, com o valor do sistema.`, 'Aplicar', () => { A.npHist.forEach(o => { S.decGuia[o.k] = { valor: 'sistema', destino: { tipo: 'dentista', dentistaId: sugestaoHist(o).dentistaId } }; S.decGuiaAuto[o.k] = true; }); return A.npHist.length; }));
+  on('ajNpResp', lote('Dar para o Resp. no sistema?', `${n0(A.npResp?.length)} guia(s) vão para o dentista que a clínica lançou como responsável, com o valor do sistema. Consultas continuam com a CLINICA.`, 'Aplicar', () => { A.npResp.forEach(o => { S.decGuia[o.k] = { valor: 'sistema', destino: { tipo: 'dentista', dentistaId: respCadastrado(o).id } }; S.decGuiaAuto[o.k] = true; }); return A.npResp.length; }));
+  on('ajNsOutro', lote('Não considerar neste mês?', `${n0(A.nsOutro?.length)} lançamento(s) informados pelo dentista já estão na planilha da clínica de outro mês. Eles ficam fora deste mês (são pagos no mês em que a clínica lançou).`, 'Não considerar', () => { A.nsOutro.forEach(o => { S.lancamentos[o.ne.id] = { descartado: true, motivo: 'em outra competência' }; }); return A.nsOutro.length; }));
+  on('ajNsPagar', lote('Pagar a quem informou?', `${n0(A.nsResto?.length)} lançamento(s) não estão na planilha da clínica de nenhum mês carregado. Eles entram na comissão de quem informou, com o valor informado. Confira antes: a clínica pode não ter faturado essas guias.`, 'Pagar a quem informou', () => { A.nsResto.forEach(o => { S.lancamentos[o.ne.id] = { dentistaId: o.ne.informanteId, valor: o.ne.valor ?? 0 }; }); return A.nsResto.length; }));
+  on('ajUndo', () => { const u = S.undoLote.pop(); if (!u) return; const o = JSON.parse(u); S.decGuia = o.decGuia; S.decGuiaAuto = o.decGuiaAuto; S.lancamentos = o.lancamentos; run(false); salvar(); toast('Última ação em lote desfeita'); });
+}
 
 /* ===================== divisão entre dentistas ===================== */
 const partesTxt = partes => (partes || []).filter(p => p.dentistaId).map(p => `${dentById(p.dentistaId)?.nome || '?'} ${String(Math.round(p.pct * 100) / 100).replace('.', ',')}%`).join(' · ');
@@ -968,8 +1171,8 @@ function renderPend() {
 
 /* somente leitura quando fechada */
 function applyRO() {
-  if (!S.ro) { ['#tolDiv', '#bulkSis', '#bulkInf', '#bulkNE', '#fileSys', '#fileDen'].forEach(x => { const el = $(x); if (el) el.disabled = false; }); return; }
-  document.querySelectorAll('#tab-conc input, #tab-conc select, #tab-res select:not(#gDent), #tab-res input:not(#gBusca), #btnRun, #btnPgto, #bulkSis, #bulkInf, #bulkNE, [data-rm], [data-dse]').forEach(el => { if (el.id !== 'compMes') el.disabled = true; });
+  if (!S.ro) { ['#tolDiv', '#fileSys', '#fileDen'].forEach(x => { const el = $(x); if (el) el.disabled = false; }); return; }
+  document.querySelectorAll('#tab-conc input, #tab-conc select, #tab-res select:not(#gDent), #tab-res input:not(#gBusca), #btnRun, #btnPgto, #painelAjuda button, [data-rm], [data-dse]').forEach(el => { if (el.id !== 'compMes') el.disabled = true; });
 }
 function renderAllConc() { applyRO(); renderSys(); renderSit(); renderDen(); checkReady(); renderResult(); renderSugestoes(); renderRegras(); applyRO(); }
 
@@ -1004,9 +1207,9 @@ $('#btnExport').onclick = () => {
 function exportarExcel(R, nomeArquivo) {
   const nm = id => dentById(id)?.nome || '';
   const wb = XLSX.utils.book_new();
-  const res = R.resumo.map(r => ({ Dentista: r.nome, Especialidade: r.especialidade, Remuneração: FORMAS[r.forma], 'Valor/%': r.valorRef, Guias: r.guias, Procedimentos: r.procs, Produção: +(+r.producao).toFixed(2), Ajustes: +(+r.ajustes || 0).toFixed(2), 'Base comissionável': +(+r.base).toFixed(2), Diárias: r.forma === 'diaria' ? r.diarias : '', Comissão: +(+r.comissao).toFixed(2), 'Enviado p/ pgto': r.dentistaId && S.pagamentos ? dataBR(pgtoDe(r.dentistaId)?.data || '') : '' }));
-  res.push({ Dentista: 'TOTAL', Produção: +R.resumo.reduce((a, r) => a + +r.producao, 0).toFixed(2), Ajustes: +R.resumo.reduce((a, r) => a + (+r.ajustes || 0), 0).toFixed(2), 'Base comissionável': +R.resumo.reduce((a, r) => a + +r.base, 0).toFixed(2), Comissão: +R.resumo.reduce((a, r) => a + +r.comissao, 0).toFixed(2) });
-  const ws1 = XLSX.utils.json_to_sheet(res); ws1['!cols'] = [28, 14, 14, 9, 8, 12, 13, 12, 16, 8, 13].map(w => ({ wch: w }));
+  const res = R.resumo.map(r => ({ Dentista: r.nome, Especialidade: r.especialidade, Remuneração: FORMAS[r.forma], 'Valor/%': r.valorRef, Guias: r.guias, Procedimentos: r.procs, Produção: +(+r.producao).toFixed(2), Ajustes: +(+r.ajustes || 0).toFixed(2), Glosas: +(+r.glosas || 0).toFixed(2), 'Base comissionável': +(+r.base).toFixed(2), Diárias: r.forma === 'diaria' ? r.diarias : '', Comissão: +(+r.comissao).toFixed(2), 'Enviado p/ pgto': r.dentistaId && S.pagamentos ? dataBR(pgtoDe(r.dentistaId)?.data || '') : '' }));
+  res.push({ Dentista: 'TOTAL', Produção: +R.resumo.reduce((a, r) => a + +r.producao, 0).toFixed(2), Ajustes: +R.resumo.reduce((a, r) => a + (+r.ajustes || 0), 0).toFixed(2), Glosas: +R.resumo.reduce((a, r) => a + (+r.glosas || 0), 0).toFixed(2), 'Base comissionável': +R.resumo.reduce((a, r) => a + +r.base, 0).toFixed(2), Comissão: +R.resumo.reduce((a, r) => a + +r.comissao, 0).toFixed(2) });
+  const ws1 = XLSX.utils.json_to_sheet(res); ws1['!cols'] = [28, 14, 14, 9, 8, 12, 13, 12, 12, 16, 8, 13].map(w => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, ws1, 'Comissões');
   if (R.linhas) {
     const det = R.linhas.map(l => ({ Data: l.data ? l.data.toLocaleDateString('pt-BR') : (l.d || ''), Guia: l.guiaRaw ?? l.g, Atendimento: l.atendimento ?? l.a, Procedimento: l.procedimento ?? l.pr, Paciente: l.paciente ?? l.p, Situação: l.situacao ?? l.s, 'Resp. no sistema': l.dentistaSistema ?? l.ds, Executor: l.en ?? (l.origem === 'split' ? 'Dividida: ' + partesTxt(l.split) : nm(l.executorId)), Origem: ORIG_LBL[l.origem ?? l.o], Comissionável: (l.comissionavel ?? l.c) ? 'Sim' : 'Não', Valor: l.valor ?? l.v, 'Data pgto': l.id != null && S.pagamentos ? dataBR(linhaPgto(l.id) || '') : '', Observação: l.alerta || '' }));

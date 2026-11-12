@@ -119,14 +119,23 @@ Comissão: **percentual** sobre a base (situações marcadas), **diária fixa** 
 
 ---
 
-## Conferência por atendimento (Resultado)
-Painel único: cada linha é um atendimento com as linhas do sistema (executor de cada procedimento), o que cada dentista informou e a diferença. Clique para abrir e decidir. Quando o valor não bate, aparece **Diferença de valor** (com ⚠ se 2+ dentistas informaram a guia) e dois seletores: **qual valor vale** (informado pelo dentista ou do sistema) e **para quem vai** (dividir entre dentistas ou associar tudo a um dentista). Depois de decidido, o atendimento sai das pendências. A situação de cada atendimento pode ser: Conflito, Diferença, Sem executor, Não localizado, Conciliado, Só no sistema ou Pendente. O filtro **"⚠ Precisa de ação"** mostra o que falta decidir.
+## Conferência das guias (Resultado)
+Uma linha por guia. Cada guia cai em um caso:
+- **Match**: um dentista informou e o valor bate (inclui as guias definidas por regra, ex.: Consulta → CLINICA).
+- **Dois dentistas informaram**: escolha o executor ou divida, linha a linha.
+- **Divergência de valor**: escolha o valor a pagar (sistema ou informado), na linha ou em lote.
+- **Não encontrado**: na planilha da clínica sem informe de dentista, ou informado pelo dentista e fora da planilha da clínica. O sistema procura essas guias nos **outros meses** já conciliados (tabela `guias_index`) e sugere a solução.
+
+O quadro **"O que fazer"** muda conforme o filtro e explica cada ação em lote. Toda ação em lote pode ser desfeita (**↺ Desfazer última ação em lote**). A conciliação fica salva: depois de clicar em **Conciliar e calcular comissões**, ninguém precisa clicar de novo, a não ser que uma planilha mude.
 
 O **filtro de dentista** e a **busca** no topo do Resultado valem para todas as tabelas: comissão, painel e guias pendentes.
 
 ## Conferência por dentista e envio para pagamento
 - Em **Resultado → Comissão por dentista**, clique no nome do dentista para abrir a conferência: o que ele informou na planilha × o que foi apurado no sistema, por atendimento, com a situação de cada um (Conciliado, Diferença, Só no sistema, Outro executor, Pendente, Não localizado).
 - **💸 Enviado para pagamento:** escolha a data e os dentistas. Todas as transações deles na competência ficam marcadas com a data de pagamento (coluna **Pgto**, detalhamento e Excel). O último envio pode ser desfeito. Se entrarem linhas novas depois do envio, a data aparece com * até um novo envio.
+
+## Glosas
+Aba **Glosas**: suba o arquivo de glosas (.xlsx, .xls ou .csv, uma aba por lote, com Número da Guia, Situação e Valor). O sistema identifica o executor (regra, conciliação do mês, meses anteriores ou dentista do arquivo). **Recusado** e **Não tem como recusar** são descontados da base de comissão do executor no mês (coluna **Glosas**); **Com pendência** fica aguardando recurso. Executor e ação podem ser trocados em cada linha. Exporta para Excel.
 
 ## Guias pendentes
 Toda linha com status/situação **Pendente** fica **fora do movimento**: não entra em produção, detalhamento, divergências, base nem comissão. Ela aparece só na aba **Guias pendentes**, com motivo e executor. Lá o usuário escolhe o executor (mesmas regras do Resultado) e clica em **Aprovar pgto**. A guia aprovada entra na produção e na comissão. A aprovação fica registrada com data e usuário e pode ser desfeita.
@@ -136,6 +145,9 @@ Pelo próprio sistema (admin): **Histórico → Apagar bases**. Apaga competênc
 Requer rodar uma vez `supabase/apagar_bases.sql` (já incluído no `schema.sql`).
 
 Alternativa manual: `supabase/limpar_base.sql` no SQL Editor + apagar as pastas em **Storage → planilhas**.
+
+## Atualização 2026.11.12
+Rode uma vez `supabase/atualizacao_2026_11_12.sql` no SQL Editor (cria o índice de guias e libera arquivos de glosa). Depois abra cada mês já conciliado uma vez para ele entrar na busca do histórico.
 
 ## Atualizações futuras
 Para publicar uma nova versão do site, basta substituir os arquivos no GitHub. O banco não muda. Se uma atualização trouxer mudanças no `schema.sql`, rode o arquivo de novo no SQL Editor: ele pode ser executado várias vezes sem perder dados.
