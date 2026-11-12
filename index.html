@@ -186,7 +186,7 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
     <button data-tab="esp">Especialidades</button>
     <button data-tab="hist">Histórico</button>
   </nav>
-  <div class="user" title="versão 2026.11.12-1"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
+  <div class="user" title="versão 2026.11.12-3"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
 </div></header>
 
 <div class="wrap">
@@ -339,12 +339,10 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
     <table class="t" id="tblAud"></table></div>
   <div class="card sect hide" id="cardApagar" style="border-color:#f1c4c4">
     <div class="row" style="margin-bottom:8px"><h3 style="margin:0;color:#b42318">Apagar bases</h3><span class="sp"></span><span class="muted" style="font-size:12px">Só administradores · não tem como desfazer</span></div>
-    <p class="muted" style="margin:0 0 10px;font-size:13px">Apaga <b>todas as competências</b> (rascunhos e fechadas), versões, comissões fechadas, pagamentos e as planilhas guardadas, para recomeçar do zero. Usuários, especialidades e o dentista CLINICA continuam.</p>
-    <div class="row" style="gap:18px;flex-wrap:wrap">
-      <label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="apDent"> Apagar também os dentistas cadastrados (e as regras deles)</label>
-      <label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="apAud"> Apagar também a auditoria</label>
-      <span class="sp"></span><button class="btn" id="btnApagar" style="background:#b42318;border-color:#b42318;color:#fff">Apagar bases…</button>
-    </div></div>
+    <p class="muted" style="margin:0 0 10px;font-size:13px">Escolha a competência. Você pode apagar só alguns arquivos (por exemplo, uma planilha de dentista errada) ou a competência inteira. Usuários, dentistas, especialidades e as outras competências não são afetados.</p>
+    <div class="row" style="gap:10px;flex-wrap:wrap"><label class="fld" style="width:260px"><span>Competência</span><select class="inp" id="apComp"></select></label><span class="sp"></span></div>
+    <div id="apArquivos" style="margin-top:12px"></div>
+  </div>
 </section>
 </div>
 
@@ -356,7 +354,7 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
     <label class="fld"><span>E-mail</span><input class="inp" id="lgEmail" type="email" autocomplete="username" required></label>
     <label class="fld" style="margin-top:10px"><span>Senha</span><input class="inp" id="lgSenha" type="password" autocomplete="current-password" required></label>
     <button class="btn pri" style="width:100%;justify-content:center;margin-top:16px" id="lgBtn">Entrar</button>
-    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.12-1</p>
+    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.12-3</p>
     <p class="muted" id="lgMsg" style="font-size:12.5px;min-height:18px;margin:10px 0 0"></p>
     <div class="lg-links"><a href="#" id="lnkAcesso">Solicitar acesso</a><span>·</span><a href="#" id="lnkSenha">Esqueci minha senha</a></div>
   </form>
@@ -406,8 +404,8 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
 
 <script src="js/vendor/xlsx.full.min.js"></script>
 <script src="js/vendor/supabase.js"></script>
-<script src="js/config.js?v=2026.11.12-1"></script>
-<script src="js/core.js?v=2026.11.12-1"></script>
-<script src="js/app.js?v=2026.11.12-1"></script>
+<script src="js/config.js?v=2026.11.12-3"></script>
+<script src="js/core.js?v=2026.11.12-3"></script>
+<script src="js/app.js?v=2026.11.12-3"></script>
 </body>
 </html>
