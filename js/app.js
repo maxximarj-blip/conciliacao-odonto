@@ -531,7 +531,7 @@ function situacaoDet(r, id) {
   const origem = (r.origens || []).map(o => ({ regra: 'por regra de procedimento', sistema: 'pelo Resp. no sistema', manual: 'por decisão manual', split: 'por divisão entre dentistas', lancamento: 'por decisão (lançamento fora do sistema)', ajuste: 'com ajuste para o valor informado', dentista: 'pela sua produção', atendimento: 'pela sua produção (atendimento)', aprovada: 'pendência aprovada' }[o])).filter(Boolean);
   switch (r.status) {
     case 'ok': return `Conciliado. Comissão sobre ${brl(r.base)}.`;
-    case 'dif': return `Comissão sobre ${brl(r.base)} (${r.ajusteInf ? 'valor informado por você' : 'valor do sistema'}). Diferença entre informado e sistema: ${brl(r.dif)}.`;
+    case 'dif': return `Comissão sobre ${brl(r.base)} (${r.ajusteInf ? 'valor ajustado na conferência' : 'valor do sistema'}). Diferença entre informado e sistema: ${brl(r.dif)}.`;
     case 'outro': { const ex = r.det?.executores || []; const ps = (r.det?.splits || []).filter(p => p.dentistaId).map(p => `${nm(p.dentistaId)} ${p.pct}%`);
       return ex.includes(null) && ex.length === 1 ? 'Sem executor definido: aguardando decisão da clínica.' : `Associado a ${[...ex.filter(x => x && x !== 'split').map(nm), ...(ps.length ? ['divisão: ' + ps.join(', ')] : [])].join(', ') || '—'}${ex.includes(null) ? '; parte do atendimento ainda sem executor (aguardando decisão)' : ''}.`; }
     case 'pendente': return `Pendente no sistema da clínica: ${(r.det?.motivos || []).map(m => m.replace(/[.\s]+$/, '')).join('; ') || 'sem motivo informado'}. Fica fora da comissão até a aprovação do pagamento.`;
@@ -670,6 +670,7 @@ function decisoesGuiaParaMotor() {
   Object.entries(S.decGuia).forEach(([k, d]) => {
     if (!d?.destino) return;
     const i = inf[k] || {}; const vals = Object.values(i).map(o => o.valor);
+    if (d.valor === 'livre') { out[k] = { valor: 'informado', destino: d.destino, alvo: +d.livre || 0 }; return; }
     const alvo = d.valor === 'informado' ? (d.destino.tipo === 'dentista' && i[d.destino.dentistaId] ? i[d.destino.dentistaId].valor : (vals.length ? Math.max(...vals) : null)) : null;
     out[k] = { valor: d.valor || 'sistema', destino: d.destino, alvo };
   });
@@ -786,7 +787,7 @@ function valorSelect(o) {
   const v = o.dec?.valor || (o.st === 'resolvido' && Math.abs(o.dif) > tolV() ? 'sistema' : '');
   const precisa = Math.abs(o.dif) > tolV();
   if (!precisa && !v) return '<span class="muted" style="font-size:12px">igual</span>';
-  return `<select class="inp" data-gv="${esc(o.k)}" style="${v ? '' : 'border-color:var(--warn)'}"><option value="" ${v ? '' : 'selected'}>⚠ escolher</option><option value="informado" ${v === 'informado' ? 'selected' : ''}>Informado ${brl(o.maxInf)}</option><option value="sistema" ${v === 'sistema' ? 'selected' : ''}>Sistema ${brl(o.sis)}</option></select>`;
+  return `<select class="inp" data-gv="${esc(o.k)}" style="${v ? '' : 'border-color:var(--warn)'}"><option value="" ${v ? '' : 'selected'}>⚠ escolher</option><option value="informado" ${v === 'informado' ? 'selected' : ''}>Informado ${brl(o.maxInf)}</option><option value="sistema" ${v === 'sistema' ? 'selected' : ''}>Sistema ${brl(o.sis)}</option>${v === 'livre' ? `<option value="livre" selected>Valor livre ${brl(o.dec.livre)}</option>` : ''}<option value="_livre">✎ ${v === 'livre' ? 'Alterar valor livre…' : 'Outro valor…'}</option></select>`;
 }
 function renderPainel() {
   const all = buildLinhasConf(); S.linhasConf = all;
@@ -809,7 +810,7 @@ function renderPainel() {
     const irmao = !o.ne && !o.regra ? all.find(x => x.k === 'r:' + o.k.slice(2)) : null;
     blocos.push([o, ...(irmao ? [irmao] : [])]);
   });
-  const statusCell = o => `<span class="tag ${RST[o.st][1]}" title="${o.nInf >= 2 ? `${o.nInf} dentistas informaram a guia na produção` : o.viaAt ? `Conferido pelo atendimento ${o.lines[0]?.atendimento}: informado ${brl(o.viaAt.inf)} = sistema ${brl(o.viaAt.sis)} (guias ${o.viaAt.guias.join(', ')})` : ''}">${RST[o.st][0]}${o.viaAt ? '*' : ''}</span>${o.dec || (o.trava && o.outrosInf?.length) ? ` <button class="btn ghost sm" data-gu="${esc(o.k)}" title="${o.dec ? 'Desfazer decisão' : 'Destravar: volta a ser conferida com todos que informaram'}" style="padding:2px 6px">↺</button>` : ''}${(() => { const sg = sugestaoHist(o); const t = o.inclRegra && !o.trava ? `valor informado inclui a consulta da mesma guia (${brl(o.inclRegra)})` : o.trava && o.outrosInf?.length ? `🔒 travada com ${dentById(o.trava.dentistaId)?.nome || ''} · ${o.outrosInf.map(id => dentById(id)?.nome || '?').join(', ')} também informou, não altera` : o.porRegra ? (o.lines.find(l => l.regraTxt)?.regraTxt || 'definida por regra') : o.st === 'nao_planilha' && !o.semExec ? `vai para ${esc(dentById(o.executores[0])?.nome || '')} (Resp. no sistema)` : o.st === 'nao_planilha' ? '⚠ escolha quem fez em Executor' : ''; return (sg || t) ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${sg ? `<span style="color:var(--info)">↪ ${esc(sg.txt)}</span>` : esc(t)}</div>` : ''; })()}${o.st === 'resolvido' ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${o.dec?.destino ? (o.dec.destino.tipo === 'split' ? 'dividida entre dentistas' : o.dec.destino.tipo === 'linhas' ? 'executor escolhido por procedimento' : 'executor escolhido') : 'executor associado'}${o.nInf && Math.abs(o.dif) > tolV() ? ` · paga o valor ${o.dec?.valor === 'informado' ? 'informado' : 'do sistema'}` : ''}</div>` : ''}`;
+  const statusCell = o => `<span class="tag ${RST[o.st][1]}" title="${o.nInf >= 2 ? `${o.nInf} dentistas informaram a guia na produção` : o.viaAt ? `Conferido pelo atendimento ${o.lines[0]?.atendimento}: informado ${brl(o.viaAt.inf)} = sistema ${brl(o.viaAt.sis)} (guias ${o.viaAt.guias.join(', ')})` : ''}">${RST[o.st][0]}${o.viaAt ? '*' : ''}</span>${o.dec || (o.trava && o.outrosInf?.length) ? ` <button class="btn ghost sm" data-gu="${esc(o.k)}" title="${o.dec ? 'Desfazer decisão' : 'Destravar: volta a ser conferida com todos que informaram'}" style="padding:2px 6px">↺</button>` : ''}${(() => { const sg = sugestaoHist(o); const t = o.inclRegra && !o.trava ? `valor informado inclui a consulta da mesma guia (${brl(o.inclRegra)})` : o.trava && o.outrosInf?.length ? `🔒 travada com ${dentById(o.trava.dentistaId)?.nome || ''} · ${o.outrosInf.map(id => dentById(id)?.nome || '?').join(', ')} também informou, não altera` : o.porRegra ? (o.lines.find(l => l.regraTxt)?.regraTxt || 'definida por regra') : o.st === 'nao_planilha' && !o.semExec ? `vai para ${esc(dentById(o.executores[0])?.nome || '')} (Resp. no sistema)` : o.st === 'nao_planilha' ? '⚠ escolha quem fez em Executor' : ''; return (sg || t) ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${sg ? `<span style="color:var(--info)">↪ ${esc(sg.txt)}</span>` : esc(t)}</div>` : ''; })()}${o.st === 'resolvido' ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${o.dec?.destino ? (o.dec.destino.tipo === 'split' ? 'dividida entre dentistas' : o.dec.destino.tipo === 'linhas' ? 'executor escolhido por procedimento' : 'executor escolhido') : 'executor associado'}${o.nInf && Math.abs(o.dif) > tolV() ? ` · paga ${o.dec?.valor === 'livre' ? `o valor livre ${brl(o.dec.livre)}` : `o valor ${o.dec?.valor === 'informado' ? 'informado' : 'do sistema'}`}` : ''}</div>` : ''}`;
   const difCell = o => `<td class="num" style="color:${!o.nInf || o.viaAt || Math.abs(o.dif) <= tolV() ? 'var(--muted)' : o.dif > 0 ? 'var(--bad)' : 'var(--info)'}" ROWSPAN>${o.viaAt ? `<span title="Bate pelo atendimento">≈ 0</span>` : o.nInf ? brl(o.dif) : '—'}</td>`;
   const html = blocos.map(bl => {
     const total = bl.reduce((a, o) => a + Math.max(1, o.lines.length), 0), o0 = bl[0];
@@ -872,8 +873,18 @@ function bindConf(T) {
       toast('Executor definido só para este procedimento.');
     }
   });
-  T.querySelectorAll('[data-gv]').forEach(x => x.onchange = () => {
-    const o = row(x.dataset.gv); const valor = x.value || undefined;
+  T.querySelectorAll('[data-gv]').forEach(x => x.onchange = async () => {
+    const o = row(x.dataset.gv);
+    if (x.value === '_livre') {
+      const r = await dialog(`Valor a pagar da guia ${o.guia}`, `Sistema: ${brl(o.sis)} · Informado: ${brl(o.maxInf)}\nDigite o valor que deve entrar na comissão (ex.: 85,50).`, { input: true, placeholder: '0,00', okText: 'Usar este valor', required: true });
+      if (r === null) { renderPainel(); return; }
+      const n = Number(String(r).replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.'));
+      if (!isFinite(n) || n < 0) { toast('Valor inválido.'); renderPainel(); return; }
+      let destino = o.dec?.destino; if (!destino && o.nInf === 1) destino = { tipo: 'dentista', dentistaId: o.infIds[0] };
+      if (!destino) { S.decGuia[o.k] = { ...(S.decGuia[o.k] || {}), valor: 'livre', livre: n }; toast('Agora escolha o executor (associar a um dentista ou dividir).'); renderPainel(); salvar(); return; }
+      setDec(o.k, { valor: 'livre', livre: n, destino }); return;
+    }
+    const valor = x.value || undefined;
     let destino = o.dec?.destino;
     if (valor && !destino && o.nInf === 1) destino = { tipo: 'dentista', dentistaId: o.infIds[0] };
     if (valor && !destino) { S.decGuia[o.k] = { ...(S.decGuia[o.k] || {}), valor }; toast('Agora escolha o executor (associar a um dentista ou dividir).'); renderPainel(); salvar(); return; }
