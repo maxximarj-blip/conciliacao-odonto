@@ -188,7 +188,7 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
     <button data-tab="esp">Especialidades</button>
     <button data-tab="hist">Histórico</button>
   </nav>
-  <div class="user" title="versão 2026.11.15-1"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
+  <div class="user" title="versão 2026.11.15-4"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
 </div></header>
 
 <div class="wrap">
@@ -214,7 +214,7 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
       <div id="sysInfo"></div>
     </div>
     <div class="card">
-      <h2><span class="n">2</span>Produções informadas pelos dentistas</h2>
+      <div class="row" style="align-items:center"><h2 style="margin:0"><span class="n">2</span>Produções informadas pelos dentistas</h2><span class="sp"></span><button class="btn sm" id="btnModelo" title="Baixa a planilha que o dentista deve preencher">⬇ Planilha modelo</button></div>
       <p class="hint">Suba várias de uma vez. O sistema acha a coluna de guias sozinho e sugere o dentista pelo nome do arquivo.</p>
       <label class="drop" id="dropDen"><div class="ic">⬆</div><b>Clique ou arraste</b> as planilhas dos dentistas<br><span class="muted">pode selecionar vários arquivos</span><input type="file" id="fileDen" accept=".xlsx,.xls,.csv" multiple></label>
       <div id="denList"></div>
@@ -229,7 +229,8 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
         <ol class="rules"><li>Guia informada por um dentista → <b>ele é o executor</b>, mesmo que o sistema aponte outro.</li>
         <li>Guia informada por mais de um dentista → <b>conflito</b>, você escolhe.</li>
         <li>Sem guia válida, só com o ID do atendimento → atribui se o valor bater; senão vai para <b>divergência</b>.</li>
-        <li>Sem planilha de dentista → usa o dentista do sistema, se estiver cadastrado.</li></ol></div>
+        <li>Sem planilha de dentista → usa o dentista do sistema, se estiver cadastrado.</li><li>Manutenção de aparelho → sempre a <b>ortodontista</b> (cadastrada com especialidade Ortodontia).</li><li>Atendimento com valor total abaixo do limite (padrão R$ 21,00) → <b>CLINICA</b>, antes de qualquer cruzamento (manutenção de aparelho fica de fora).</li></ol></div>
+      <div class="fld" style="width:250px;margin-bottom:12px"><span>Valor abaixo de (R$) → CLINICA</span><div class="row" style="gap:6px;flex-wrap:nowrap"><input class="inp num" id="limClin" type="number" min="0" step="0.5" value="21" style="text-align:right;width:80px"><select class="inp" id="limModo" style="flex:1;min-width:0"><option value="atendimento">por atendimento</option><option value="procedimento">por procedimento</option></select></div><span class="muted" style="font-weight:400;font-size:11.5px">Valor total abaixo disso vai para a CLINICA (0 desliga).</span></div>
       <div class="fld" style="width:200px"><span>Tolerância de divergência (R$)</span><input class="inp num" id="tolDiv" type="number" min="0" step="0.5" value="1" style="text-align:right"><span class="muted" style="font-weight:400;font-size:11.5px">Diferenças até esse valor não viram divergência.</span></div>
     </div>
     <div class="row" style="margin-top:16px"><span class="muted" id="readyMsg"></span><span class="sp"></span><button class="btn pri" id="btnRun" disabled>Conciliar e calcular comissões →</button></div>
@@ -356,7 +357,7 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
     <label class="fld"><span>E-mail</span><input class="inp" id="lgEmail" type="email" autocomplete="username" required></label>
     <label class="fld" style="margin-top:10px"><span>Senha</span><input class="inp" id="lgSenha" type="password" autocomplete="current-password" required></label>
     <button class="btn pri" style="width:100%;justify-content:center;margin-top:16px" id="lgBtn">Entrar</button>
-    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.15-1</p>
+    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.15-4</p>
     <p class="muted" id="lgMsg" style="font-size:12.5px;min-height:18px;margin:10px 0 0"></p>
     <div class="lg-links"><a href="#" id="lnkAcesso">Solicitar acesso</a><span>·</span><a href="#" id="lnkSenha">Esqueci minha senha</a></div>
   </form>
@@ -408,8 +409,8 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
 <script src="js/vendor/supabase.js"></script>
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jspdf.plugin.autotable.min.js"></script>
-<script src="js/config.js?v=2026.11.15-1"></script>
-<script src="js/core.js?v=2026.11.15-1"></script>
-<script src="js/app.js?v=2026.11.15-1"></script>
+<script src="js/config.js?v=2026.11.15-4"></script>
+<script src="js/core.js?v=2026.11.15-4"></script>
+<script src="js/app.js?v=2026.11.15-4"></script>
 </body>
 </html>

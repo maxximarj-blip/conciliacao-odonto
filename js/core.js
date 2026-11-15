@@ -202,7 +202,7 @@ const Core = (() => {
         Se não bater, fica pendente na divergência para o usuário decidir.
      4) Sem nenhuma planilha → usa o dentista do sistema, se estiver cadastrado.
      5) Decisões do usuário: resoluções de divergência, lançamentos não localizados e troca linha a linha. */
-  function reconcile({ systemRows, dentistFiles, dentistas, especialidades, situacoesBase, overrides = {}, diariasOverride = {}, resolucoes = {}, lancamentos = {}, splits = {}, regrasProc = [], aprovadas = {}, decAtend = {}, tolAtend = 1, tolDiv = 1, glosas = [] }) {
+  function reconcile({ systemRows, dentistFiles, dentistas, especialidades, situacoesBase, overrides = {}, diariasOverride = {}, resolucoes = {}, lancamentos = {}, splits = {}, regrasProc = [], aprovadas = {}, decAtend = {}, tolAtend = 1, tolDiv = 1, glosas = [], regraValor = null, regraOrto = null }) {
     const byId = Object.fromEntries(dentistas.map(d => [d.id, d]));
     const files = dentistFiles.filter(f => f.dentistaId);
     const add = (m, k, v) => { if (!m.has(k)) m.set(k, new Set()); m.get(k).add(v); };
@@ -241,6 +241,27 @@ const Core = (() => {
       const p = norm(l.procedimento); const rg = regras.find(x => p.includes(x.k));
       if (rg) { l.executorId = rg.dentistaId; l.origem = 'regra'; l.alerta = ''; l.regraTxt = `Regra: "${rg.termo}" → ${byId[rg.dentistaId].nome}`; l.candidatos = []; l.regra = true; }
     });
+    // manutenção de aparelho é sempre da ortodontia (vale antes da regra de valor e dos cruzamentos)
+    const ehOrto = l => /manutencao de aparelho/.test(norm(l.procedimento));
+    const ortos = (regraOrto?.ids || []).map(id => byId[id]).filter(Boolean);
+    if (ortos.length) linhas.forEach(l => {
+      if (l.regra || !ehOrto(l)) return;
+      const d = ortos.length === 1 ? ortos[0] : matchDentist(l.dentistaSistema, ortos);
+      if (!d) return;
+      l.executorId = d.id; l.origem = 'regra'; l.alerta = ''; l.candidatos = []; l.regra = true; l.regraTxt = `Regra: manutenção de aparelho → ${d.nome} (ortodontia)`;
+    });
+    // regra de valor: atendimento (ou procedimento) abaixo do limite vai para a CLINICA
+    if (regraValor && regraValor.limite > 0 && byId[regraValor.dentistaId]) {
+      const chave = l => l.atendimento ? 'a' + l.atendimento : 'g' + l.guia, tot = new Map();
+      linhas.forEach(l => { if (!l.pend) tot.set(chave(l), (tot.get(chave(l)) || 0) + l.valor); });
+      const lim = +regraValor.limite, nome = byId[regraValor.dentistaId].nome;
+      linhas.forEach(l => {
+        if (l.regra || ehOrto(l)) return;
+        const v = regraValor.modo === 'procedimento' ? l.valor : (tot.get(chave(l)) ?? l.valor);
+        if (v < lim - 0.004) { l.executorId = regraValor.dentistaId; l.origem = 'regra'; l.alerta = ''; l.candidatos = []; l.regra = true;
+          l.regraTxt = `Regra: ${regraValor.modo === 'procedimento' ? 'procedimento' : 'atendimento'} abaixo de R$ ${lim.toFixed(2).replace('.', ',')} → ${nome}`; }
+      });
+    }
     // atendimento: candidatos = linhas do atendimento sem informante pela guia
     atInf.forEach((infs, at) => {
       const ls = linhas.filter(l => l.atendimento === at && !l.candidatos.length && !l.regra && !l.pend);

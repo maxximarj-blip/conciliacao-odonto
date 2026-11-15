@@ -200,7 +200,7 @@ function resetEstado() {
   S.conciliado = false; S.conciliadoSalvo = false; S.glosaDec = {}; S.glosa = null; S.hist = { sis: {}, sisAt: {}, inf: {}, ok: false };
   S.undoLote = [];
   S.view = { orig: 'todas', dent: '', q: '', page: 0 }; S.divView = { f: 'pend', page: 0 };
-  $('#tolDiv').value = 1;
+  $('#tolDiv').value = 1; $('#limClin').value = 21; $('#limModo').value = 'atendimento';
 }
 async function abrirCompetencia(mes) {
   const comp = mes + '-01';
@@ -214,6 +214,7 @@ async function abrirCompetencia(mes) {
       const regras = c.regras || {}, dec = c.decisoes || {};
       S.overrides = dec.overrides || {}; S.diarias = dec.diarias || {}; S.resolucoes = dec.resolucoes || {}; S.lancamentos = dec.lancamentos || {}; S.splits = dec.splits || {}; S.overridesAuto = dec.overridesAuto || {}; S.aprovadas = dec.aprovadas || {}; S.pagamentos = dec.pagamentos || []; S.decAtend = dec.decAtend || {}; S.decGuia = dec.decGuia || {}; S.decGuiaAuto = dec.decGuiaAuto || {}; S.trava = dec.trava || {}; S.conciliadoSalvo = !!dec.conciliado; S.glosaDec = dec.glosaDec || {};
       if (regras.tolDiv != null) $('#tolDiv').value = regras.tolDiv;
+      $('#limClin').value = regras.limClin ?? 21; $('#limModo').value = regras.limModo || 'atendimento';
       const arqs = await q(sb.from('conciliacao_arquivos').select('*').eq('conciliacao_id', c.id).eq('ativo', true).order('enviado_em'), 'Arquivos');
       const sysA = arqs.filter(a => a.tipo === 'sistema').pop();
       if (sysA) {
@@ -252,7 +253,10 @@ async function enviarArquivo(file, tipo, dentistaId) {
   await q(sb.storage.from(BUCKET).upload(path, file, { upsert: false, contentType: file.type || 'application/octet-stream' }), 'Enviar arquivo');
   return q(sb.from('conciliacao_arquivos').insert({ conciliacao_id: c.id, tipo, nome: file.name, dentista_id: dentistaId || null, storage_path: path, tamanho: file.size }).select().single(), 'Registrar arquivo');
 }
-const regrasAtuais = () => ({ sitBase: [...S.sitBase], tolDiv: Math.max(0, +$('#tolDiv').value || 0) });
+const regrasAtuais = () => ({ sitBase: [...S.sitBase], tolDiv: Math.max(0, +$('#tolDiv').value || 0), limClin: Math.max(0, +$('#limClin').value || 0), limModo: $('#limModo').value });
+const dentClinica = () => S.cad.dentistas.find(d => d.ativo && Core.norm(d.nome) === 'clinica');
+function ortodontistas() { return S.cad.dentistas.filter(d => d.ativo && /ortodont/.test(Core.norm(S.cad.especialidades.find(e => e.id === d.especialidadeId)?.nome))).map(d => d.id); }
+function regraValorAtual() { const d = dentClinica(), lim = Math.max(0, +$('#limClin').value || 0); return d && lim ? { limite: lim, dentistaId: d.id, modo: $('#limModo').value } : null; }
 const decisoesAtuais = () => ({ overrides: S.overrides, diarias: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, overridesAuto: S.overridesAuto, aprovadas: S.aprovadas, pagamentos: S.pagamentos, decAtend: S.decAtend, decGuia: S.decGuia, decGuiaAuto: S.decGuiaAuto, trava: S.trava || {}, conciliado: !!S.conciliado, glosaDec: S.glosaDec || {} });
 const totaisAtuais = () => {
   if (!S.result) return {};
@@ -464,13 +468,14 @@ function checkReady() {
 }
 $('#btnRun').onclick = async () => { S.conciliado = true; run(true); salvar(); await flushNow().catch(() => {}); atualizarHistorico(true); };
 $('#tolDiv').onchange = () => { if (S.result) run(false); salvar(); };
+$('#limClin').onchange = $('#limModo').onchange = () => { if (S.result) run(false); salvar(); };
 
 /* ===================== conciliação ===================== */
 function run(go) {
   if (!S.sys) return;
   S.result = Core.reconcile({
     systemRows: S.sys.rows, dentistFiles: S.denFiles.filter(f => f.dentistaId), dentistas: S.cad.dentistas, especialidades: S.cad.especialidades,
-    situacoesBase: [...S.sitBase], overrides: S.overrides, diariasOverride: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, regrasProc: S.cad.regras.filter(r => r.ativo && dentById(r.dentistaId)?.ativo), aprovadas: S.aprovadas, decAtend: { ...S.decAtend, ...decisoesGuiaParaMotor() }, tolDiv: Math.max(0, +$('#tolDiv').value || 0), glosas: glosasParaMotor(),
+    situacoesBase: [...S.sitBase], overrides: S.overrides, diariasOverride: S.diarias, resolucoes: S.resolucoes, lancamentos: S.lancamentos, splits: S.splits, regrasProc: S.cad.regras.filter(r => r.ativo && dentById(r.dentistaId)?.ativo), aprovadas: S.aprovadas, decAtend: { ...S.decAtend, ...decisoesGuiaParaMotor() }, tolDiv: Math.max(0, +$('#tolDiv').value || 0), glosas: glosasParaMotor(), regraValor: regraValorAtual(), regraOrto: { ids: ortodontistas() },
   });
   renderResult(); renderCompBar(); if (!$('#tab-glosa').classList.contains('hide')) renderGlosa();
   if (go) { S.view.page = 0; showTab('res'); }
@@ -804,7 +809,7 @@ function renderPainel() {
     const irmao = !o.ne && !o.regra ? all.find(x => x.k === 'r:' + o.k.slice(2)) : null;
     blocos.push([o, ...(irmao ? [irmao] : [])]);
   });
-  const statusCell = o => `<span class="tag ${RST[o.st][1]}" title="${o.nInf >= 2 ? `${o.nInf} dentistas informaram a guia na produção` : o.viaAt ? `Conferido pelo atendimento ${o.lines[0]?.atendimento}: informado ${brl(o.viaAt.inf)} = sistema ${brl(o.viaAt.sis)} (guias ${o.viaAt.guias.join(', ')})` : ''}">${RST[o.st][0]}${o.viaAt ? '*' : ''}</span>${o.dec || (o.trava && o.outrosInf?.length) ? ` <button class="btn ghost sm" data-gu="${esc(o.k)}" title="${o.dec ? 'Desfazer decisão' : 'Destravar: volta a ser conferida com todos que informaram'}" style="padding:2px 6px">↺</button>` : ''}${(() => { const sg = sugestaoHist(o); const t = o.inclRegra && !o.trava ? `valor informado inclui a consulta da mesma guia (${brl(o.inclRegra)})` : o.trava && o.outrosInf?.length ? `🔒 travada com ${dentById(o.trava.dentistaId)?.nome || ''} · ${o.outrosInf.map(id => dentById(id)?.nome || '?').join(', ')} também informou, não altera` : o.porRegra ? 'definida por regra (ex.: Consulta → CLINICA)' : o.st === 'nao_planilha' && !o.semExec ? `vai para ${esc(dentById(o.executores[0])?.nome || '')} (Resp. no sistema)` : o.st === 'nao_planilha' ? '⚠ escolha quem fez em Executor' : ''; return (sg || t) ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${sg ? `<span style="color:var(--info)">↪ ${esc(sg.txt)}</span>` : esc(t)}</div>` : ''; })()}${o.st === 'resolvido' ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${o.dec?.destino ? (o.dec.destino.tipo === 'split' ? 'dividida entre dentistas' : o.dec.destino.tipo === 'linhas' ? 'executor escolhido por procedimento' : 'executor escolhido') : 'executor associado'}${o.nInf && Math.abs(o.dif) > tolV() ? ` · paga o valor ${o.dec?.valor === 'informado' ? 'informado' : 'do sistema'}` : ''}</div>` : ''}`;
+  const statusCell = o => `<span class="tag ${RST[o.st][1]}" title="${o.nInf >= 2 ? `${o.nInf} dentistas informaram a guia na produção` : o.viaAt ? `Conferido pelo atendimento ${o.lines[0]?.atendimento}: informado ${brl(o.viaAt.inf)} = sistema ${brl(o.viaAt.sis)} (guias ${o.viaAt.guias.join(', ')})` : ''}">${RST[o.st][0]}${o.viaAt ? '*' : ''}</span>${o.dec || (o.trava && o.outrosInf?.length) ? ` <button class="btn ghost sm" data-gu="${esc(o.k)}" title="${o.dec ? 'Desfazer decisão' : 'Destravar: volta a ser conferida com todos que informaram'}" style="padding:2px 6px">↺</button>` : ''}${(() => { const sg = sugestaoHist(o); const t = o.inclRegra && !o.trava ? `valor informado inclui a consulta da mesma guia (${brl(o.inclRegra)})` : o.trava && o.outrosInf?.length ? `🔒 travada com ${dentById(o.trava.dentistaId)?.nome || ''} · ${o.outrosInf.map(id => dentById(id)?.nome || '?').join(', ')} também informou, não altera` : o.porRegra ? (o.lines.find(l => l.regraTxt)?.regraTxt || 'definida por regra') : o.st === 'nao_planilha' && !o.semExec ? `vai para ${esc(dentById(o.executores[0])?.nome || '')} (Resp. no sistema)` : o.st === 'nao_planilha' ? '⚠ escolha quem fez em Executor' : ''; return (sg || t) ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${sg ? `<span style="color:var(--info)">↪ ${esc(sg.txt)}</span>` : esc(t)}</div>` : ''; })()}${o.st === 'resolvido' ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${o.dec?.destino ? (o.dec.destino.tipo === 'split' ? 'dividida entre dentistas' : o.dec.destino.tipo === 'linhas' ? 'executor escolhido por procedimento' : 'executor escolhido') : 'executor associado'}${o.nInf && Math.abs(o.dif) > tolV() ? ` · paga o valor ${o.dec?.valor === 'informado' ? 'informado' : 'do sistema'}` : ''}</div>` : ''}`;
   const difCell = o => `<td class="num" style="color:${!o.nInf || o.viaAt || Math.abs(o.dif) <= tolV() ? 'var(--muted)' : o.dif > 0 ? 'var(--bad)' : 'var(--info)'}" ROWSPAN>${o.viaAt ? `<span title="Bate pelo atendimento">≈ 0</span>` : o.nInf ? brl(o.dif) : '—'}</td>`;
   const html = blocos.map(bl => {
     const total = bl.reduce((a, o) => a + Math.max(1, o.lines.length), 0), o0 = bl[0];
@@ -911,6 +916,8 @@ function glosaInfo(it) {
   const regra = S.cad.regras.find(r => r.ativo && dentById(r.dentistaId)?.ativo && Core.norm(it.procedimento).includes(Core.norm(r.termo)));
   if (dec.dentistaId) { exec = dec.dentistaId === '_x' ? null : dec.dentistaId; fonte = 'escolhido por você'; }
   else if (regra) { exec = regra.dentistaId; fonte = `regra: ${regra.termo}`; }
+  else if (/manutencao de aparelho/.test(Core.norm(it.procedimento)) && ortodontistas().length) { const os = ortodontistas().map(dentById); const d = os.length === 1 ? os[0] : Core.matchDentist(it.dentistaArq, os); if (d) { exec = d.id; fonte = 'regra: manutenção de aparelho (ortodontia)'; } }
+  else if (regraValorAtual() && it.valor < regraValorAtual().limite) { exec = regraValorAtual().dentistaId; fonte = `regra: valor abaixo de ${brl(regraValorAtual().limite)}`; }
   else if (cur) { exec = cur.executorId; fonte = 'executor na conciliação deste mês'; paciente = cur.paciente; }
   else if (hs.length) { exec = hs[0].dentista_id; fonte = `executor em ${compLabel(String(hs[0].competencia).slice(0, 10))}`; paciente = hs[0].paciente; }
   else { const d = it.dentistaArq && !GENERIC.test(it.dentistaArq) ? Core.matchDentist(it.dentistaArq, ativos()) : null; if (d) { exec = d.id; fonte = 'dentista responsável no arquivo de glosas'; } }
@@ -1103,9 +1110,9 @@ function renderAjuda(list) {
         ${semSug ? `<p class="aj-obs">${n0(semSug)} guia(s) têm responsável genérico (ex.: Clínico Geral) e não foram achadas em outro mês: escolha o <b>Executor</b> na linha.</p>` : ''}</div>
       <div><b>O dentista informou, mas a guia não está na planilha da clínica deste mês</b> <span class="muted">(${n0(ns.length)})</span>
         <p>O sistema procurou essas guias nas planilhas da clínica dos outros meses.</p>
-        <div class="aj-acoes">${btn('ajNsOutro', 'Não considerar as que já estão em outro mês', nsOutro.length, true)}${btn('ajNsPagar', 'Pagar a quem informou as demais', nsResto.length)}</div>
+        <div class="aj-acoes">${btn('ajNsOutro', 'Não considerar as que já estão em outro mês', nsOutro.length, true)}${btn('ajNsPagar', 'Pagar a quem informou as demais', nsResto.length)}${btn('ajNsNada', 'Não considerar todas', ns.length)}</div>
         <p class="aj-obs">Ou decida na linha, na coluna <b>Executor</b> (escolha o dentista ou "Não considerar").</p></div></div>${filtro}`;
-    S._aj = { npHist, npResp, nsOutro, nsResto };
+    S._aj = { npHist, npResp, nsOutro, nsResto, ns };
   } else if (P.f === 'match') {
     h = '<b>Guias que bateram:</b> um dentista informou e o valor confere com o sistema (Match* = confere somando as guias do mesmo atendimento). Também entram aqui as guias definidas por regra (ex.: Consulta → CLINICA). Nada a fazer.';
   } else if (P.f === 'resolvido') {
@@ -1125,6 +1132,7 @@ function renderAjuda(list) {
   on('ajNpResp', lote('Dar para o Resp. no sistema?', `${n0(A.npResp?.length)} guia(s) vão para o dentista que a clínica lançou como responsável, com o valor do sistema. Consultas continuam com a CLINICA.`, 'Aplicar', () => { A.npResp.forEach(o => { S.decGuia[o.k] = { valor: 'sistema', destino: { tipo: 'dentista', dentistaId: respCadastrado(o).id } }; S.decGuiaAuto[o.k] = true; }); return A.npResp.length; }));
   on('ajNsOutro', lote('Não considerar neste mês?', `${n0(A.nsOutro?.length)} lançamento(s) informados pelo dentista já estão na planilha da clínica de outro mês. Eles ficam fora deste mês (são pagos no mês em que a clínica lançou).`, 'Não considerar', () => { A.nsOutro.forEach(o => { S.lancamentos[o.ne.id] = { descartado: true, motivo: 'em outra competência' }; }); return A.nsOutro.length; }));
   on('ajNsPagar', lote('Pagar a quem informou?', `${n0(A.nsResto?.length)} lançamento(s) não estão na planilha da clínica de nenhum mês carregado. Eles entram na comissão de quem informou, com o valor informado. Confira antes: a clínica pode não ter faturado essas guias.`, 'Pagar a quem informou', () => { A.nsResto.forEach(o => { S.lancamentos[o.ne.id] = { dentistaId: o.ne.informanteId, valor: o.ne.valor ?? 0 }; }); return A.nsResto.length; }));
+  on('ajNsNada', lote('Não considerar nenhuma?', `Os ${n0(A.ns?.length)} lançamento(s) informados pelos dentistas que não estão na planilha da clínica deste mês ficam fora da comissão. Dá para mudar depois, linha a linha, ou com "Desfazer última ação em lote".`, 'Não considerar todas', () => { A.ns.forEach(o => { S.lancamentos[o.ne.id] = { descartado: true }; }); return A.ns.length; }));
   on('ajUndo', () => { const u = S.undoLote.pop(); if (!u) return; const o = JSON.parse(u); S.decGuia = o.decGuia; S.decGuiaAuto = o.decGuiaAuto; S.lancamentos = o.lancamentos; run(false); salvar(); toast('Última ação em lote desfeita'); });
 }
 
@@ -1250,7 +1258,7 @@ function renderPend() {
 
 /* somente leitura quando fechada */
 function applyRO() {
-  if (!S.ro) { ['#tolDiv', '#fileSys', '#fileDen'].forEach(x => { const el = $(x); if (el) el.disabled = false; }); return; }
+  if (!S.ro) { ['#tolDiv', '#limClin', '#limModo', '#fileSys', '#fileDen'].forEach(x => { const el = $(x); if (el) el.disabled = false; }); return; }
   document.querySelectorAll('#tab-conc input, #tab-conc select, #tab-res select:not(#gDent), #tab-res input:not(#gBusca), #btnRun, #btnPgto, #painelAjuda button, [data-rm], [data-dse]').forEach(el => { if (el.id !== 'compMes') el.disabled = true; });
 }
 function renderAllConc() { applyRO(); renderSys(); renderSit(); renderDen(); checkReady(); renderResult(); renderSugestoes(); renderRegras(); applyRO(); }
@@ -1321,6 +1329,33 @@ $('#dmPdf').onclick = () => {
       doc.text(lat(`${d?.nome || ''} · ${compLabel(S.conc.competencia)} · Comissão apurada ${brl(rs?.comissao || 0)}`), 12, H - 6); doc.text(`Página ${n}`, W - 12, H - 6, { align: 'right' }); } });
   doc.save(`Extrato_${nomeArq(d?.nome || 'dentista')}_${nomeArq(compLabel(S.conc.competencia))}.pdf`);
 };
+function planilhaModelo() {
+  const comp = S.conc?.competencia ? compLabel(S.conc.competencia) : '';
+  const cab = ['ID Atendimento', 'Paciente', 'Dentista Executor', 'Data de Atendimento', 'Especialidade', 'Procedimento', 'Convênio', 'Nº da Guia', 'Valor'];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([cab]);
+  ws['!cols'] = [14, 34, 24, 16, 16, 40, 18, 16, 12].map(w => ({ wch: w }));
+  ws['!autofilter'] = { ref: 'A1:I1' };
+  XLSX.utils.book_append_sheet(wb, ws, 'Produção');
+  const inst = [
+    [`Planilha de produção do dentista${comp ? ' · ' + comp : ''} · ${window.APP_CONFIG?.clinica || ''}`], [],
+    ['Como preencher'],
+    ['1. Use a aba "Produção". Uma linha por guia atendida (ou por procedimento, se preferir).'],
+    ['2. Nº da Guia é o campo mais importante: copie exatamente como está na guia do convênio.'],
+    ['3. Se não tiver o número da guia, preencha o ID Atendimento (número do atendimento no sistema da clínica).'],
+    ['4. Valor: o valor da guia/procedimento que você realizou (use vírgula ou ponto para os centavos).'],
+    ['5. Data de Atendimento no formato dd/mm/aaaa.'],
+    ['6. Não mude os nomes das colunas nem a ordem. Não deixe linhas em branco no meio da lista.'],
+    ['7. Salve com o seu nome no arquivo (ex.: Producao_Dra_Fulana_Outubro.xlsx) e envie para a clínica.'], [],
+    ['Exemplo (não copie para a aba Produção)'], cab,
+    ['EXEMPLO', 'Maria da Silva', 'Dra Fulana de Tal', '01/10/2026', 'Clínico', 'Limpeza + Restauração', 'ODONTOPREV', 'EXEMPLO1', 105.72],
+    ['EXEMPLO', 'João Souza', 'Dra Fulana de Tal', '02/10/2026', 'Clínico', 'Restauração em resina 1 face', 'SULAMERICA', 'EXEMPLO2', 21.45],
+  ];
+  const wi = XLSX.utils.aoa_to_sheet(inst); wi['!cols'] = [{ wch: 16 }, { wch: 22 }, { wch: 20 }, { wch: 16 }, { wch: 14 }, { wch: 30 }, { wch: 14 }, { wch: 14 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(wb, wi, 'Instruções');
+  XLSX.writeFile(wb, `Planilha_modelo_producao${comp ? '_' + nomeArq(comp) : ''}.xlsx`);
+}
+$('#btnModelo').onclick = planilhaModelo;
 $('#btnExport').onclick = () => {
   if (!S.result) { toast('Faça a conciliação primeiro.'); return; }
   exportarExcel(S.result, `Conciliacao_${compLabel(S.conc.competencia).replace('/', '_')}${S.ro ? '_fechada' : ''}.xlsx`);
