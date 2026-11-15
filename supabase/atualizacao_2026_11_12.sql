@@ -37,3 +37,6 @@ drop policy if exists apagar_guias_index on public.guias_index;
 create policy apagar_guias_index on public.guias_index for delete to authenticated using (true);
 revoke all on public.guias_index from anon;
 grant select, insert, delete on public.guias_index to authenticated;
+
+-- recarrega o cache da API para as funções novas aparecerem na hora
+notify pgrst, 'reload schema';

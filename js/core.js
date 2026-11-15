@@ -284,7 +284,7 @@ const Core = (() => {
       if (!k) return;
       (infPorKey[k] = infPorKey[k] || {})[f.dentistaId] = (infPorKey[k][f.dentistaId] || 0) + (it.valor || 0);
     }));
-    const decOk = d => d && (!d.valor || d.valor === 'sistema' || d.valor === 'informado') && d.destino && ((d.destino.tipo === 'dentista' && d.destino.dentistaId) || (d.destino.tipo === 'split' && partesOk(d.destino.partes)));
+    const decOk = d => d && (!d.valor || d.valor === 'sistema' || d.valor === 'informado') && d.destino && ((d.destino.tipo === 'dentista' && d.destino.dentistaId) || (d.destino.tipo === 'split' && partesOk(d.destino.partes)) || d.destino.tipo === 'linhas');
     files.forEach(f => {
       if (!f.temValor) return;
       const inf = new Map();
@@ -341,9 +341,10 @@ const Core = (() => {
       const kk = k.slice(2), tp = k[0];
       const L = linhas.filter(l => !l.pend && (tp === 'g' ? l.guia === kk && !l.regra : tp === 'r' ? l.guia === kk && l.regra : keyLinha(l) === k && !l.regra));
       if (!L.length && dec.valor === 'sistema') return;
-      tiraSplitExtras(new Set(L.map(l => l.id)));
       const ds = dec.destino;
-      L.forEach(l => { l.split = null; l.splitInformado = false; l.decGrupo = true; l.atPendente = null;
+      if (ds.tipo === 'linhas') { L.forEach(l => { l.decGrupo = true; l.atPendente = null; }); return; }
+      tiraSplitExtras(new Set(L.filter(l => !overrides[l.id]).map(l => l.id)));
+      L.forEach(l => { if (overrides[l.id]) return; l.split = null; l.splitInformado = false; l.decGrupo = true; l.atPendente = null;
         if (ds.tipo === 'dentista') { l.executorId = ds.dentistaId; l.origem = 'manual'; l.alerta = 'Definido na decisão do atendimento'; }
         else dividirLinha(l, ds.partes, 'Atendimento dividido'); });
       if (dec.valor === 'informado') {

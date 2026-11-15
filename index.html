@@ -172,6 +172,7 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
 .dmgo{color:var(--ink);text-decoration:none;display:block}.dmgo:hover .l{color:var(--brand);text-decoration:underline}
 #tblGlosa .tag,#tblPainel .tag,#tblPend .tag,#dmTbl .tag{white-space:normal;line-height:1.3}
 #cardAud.fechado #segAud,#cardAud.fechado #tblAud{display:none}#cardAud.fechado .row{margin-bottom:0!important}
+#tblPainel tr.cont td{border-top:0}#tblPainel tr.cont td,#tblPainel tr.sub td{padding-top:4px}
 </style>
 </head>
 <body>
@@ -187,7 +188,7 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
     <button data-tab="esp">Especialidades</button>
     <button data-tab="hist">Histórico</button>
   </nav>
-  <div class="user" title="versão 2026.11.12-6"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
+  <div class="user" title="versão 2026.11.15-1"><span class="save" id="saveState"></span><span id="userChip"></span><button class="btn sm hide" id="btnSol" style="background:var(--accent);border-color:var(--accent);color:var(--ink)">Solicitações <span id="solCnt"></span></button><button class="btn sm ghost" id="btnSair" style="color:#bfd6d2">Sair</button></div>
 </div></header>
 
 <div class="wrap">
@@ -251,7 +252,7 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
     </div>
     <div class="card sect" id="cardPainel">
       <div class="row" style="margin-bottom:4px"><h3 style="margin:0">Conferência das guias: sistema × produção informada</h3><span class="sp"></span><span class="muted" id="histInfo" style="font-size:12px"></span></div>
-      <p class="hint">Uma linha por guia. Cada guia cai em um caso: <b>Match</b> (bateu), <b>Dois dentistas informaram</b>, <b>Divergência de valor</b> ou <b>Não encontrado</b> (no sistema ou na planilha do dentista). Escolha um filtro e siga o quadro "O que fazer".</p>
+      <p class="hint">Cada procedimento da planilha da clínica aparece em uma linha, agrupado pela guia. Cada guia cai em um caso: <b>Match</b> (bateu), <b>Dois dentistas informaram</b>, <b>Divergência de valor</b> ou <b>Não encontrado</b> (no sistema ou na planilha do dentista). Escolha um filtro e siga o quadro "O que fazer".</p>
       <div class="filters"><div class="seg" id="segPainel"></div></div>
       <div class="ajuda" id="painelAjuda"></div>
       <table class="t" id="tblPainel"></table>
@@ -355,7 +356,7 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
     <label class="fld"><span>E-mail</span><input class="inp" id="lgEmail" type="email" autocomplete="username" required></label>
     <label class="fld" style="margin-top:10px"><span>Senha</span><input class="inp" id="lgSenha" type="password" autocomplete="current-password" required></label>
     <button class="btn pri" style="width:100%;justify-content:center;margin-top:16px" id="lgBtn">Entrar</button>
-    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.12-6</p>
+    <p class="muted" style="font-size:11px;text-align:center;margin:12px 0 0">versão 2026.11.15-1</p>
     <p class="muted" id="lgMsg" style="font-size:12.5px;min-height:18px;margin:10px 0 0"></p>
     <div class="lg-links"><a href="#" id="lnkAcesso">Solicitar acesso</a><span>·</span><a href="#" id="lnkSenha">Esqueci minha senha</a></div>
   </form>
@@ -407,8 +408,8 @@ tr.flash td{animation:flash 2.4s ease-out}@keyframes flash{0%,40%{background:#ff
 <script src="js/vendor/supabase.js"></script>
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jspdf.plugin.autotable.min.js"></script>
-<script src="js/config.js?v=2026.11.12-6"></script>
-<script src="js/core.js?v=2026.11.12-6"></script>
-<script src="js/app.js?v=2026.11.12-6"></script>
+<script src="js/config.js?v=2026.11.15-1"></script>
+<script src="js/core.js?v=2026.11.15-1"></script>
+<script src="js/app.js?v=2026.11.15-1"></script>
 </body>
 </html>

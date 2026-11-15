@@ -678,6 +678,7 @@ function buildLinhasConf() {
     const o = M.get(k); o.lines.push(l); o.procs.push(l.procedimento); o.resp.add(l.dentistaSistema);
   });
   Object.entries(inf).forEach(([k, i]) => { const tgt = M.get(k) || M.get('r:' + k.slice(2)); if (tgt) tgt.inf = i; });
+  const rSisBy = {}; M.forEach(o => { if (o.regra) rSisBy[o.k.slice(2)] = o.lines.reduce((a, l) => a + l.valor, 0); });
   const rows = [...M.values()].map(o => {
     o.inf = o.inf || {};
     o.sis = o.lines.reduce((a, l) => a + l.valor, 0);
@@ -685,9 +686,13 @@ function buildLinhasConf() {
     o.executores = [...ex]; o.semExec = semEx; o.split = o.lines.some(l => l.origem === 'split');
     const ids = Object.keys(o.inf); o.nInf = ids.length; o.infIds = ids;
     o.maxInf = ids.length ? Math.max(...ids.map(id => o.inf[id].valor)) : null;
-    o.dif = o.nInf ? o.maxInf - o.sis : 0;
     o.dec = S.decGuia[o.k] || null;
     o.trava = !o.dec?.destino && S.trava?.[o.k] && dentById(S.trava[o.k].dentistaId) ? S.trava[o.k] : null;
+    const ref = o.trava && o.inf[o.trava.dentistaId] ? o.inf[o.trava.dentistaId].valor : o.maxInf;
+    o.dif = o.nInf ? ref - o.sis : 0;
+    // o dentista pode informar a guia inteira, incluindo a consulta que vai para a CLINICA pela regra
+    const rSis = !o.regra ? rSisBy[o.k.slice(2)] || 0 : 0;
+    if (o.nInf && rSis && Math.abs(o.dif) > tolV() && Math.abs(ref - o.sis - rSis) <= tolV()) { o.dif = 0; o.inclRegra = rSis; }
     if (o.dec?.destino) o.st = 'resolvido';
     else if (o.trava) { o.st = 'match'; o.outrosInf = ids.filter(id => id !== o.trava.dentistaId); }
     else if (o.regra) { o.st = 'match'; o.porRegra = true; }
@@ -760,7 +765,17 @@ function execSelect(o) {
     ${opts.map(id => `<option value="${id}" ${cur === id ? 'selected' : ''}>${esc(dentById(id)?.nome || '?')}${o.inf[id] ? ` (informou)` : ''}</option>`).join('')}
     <option value="_split" ${cur === '_split' ? 'selected' : ''}>${cur === '_split' ? '÷ ' + esc(partesTxt(d.partes)) : '÷ Dividir entre dentistas…'}</option></select>`;
 }
+function linhaSelect(o, l) {
+  const cur = l.origem === 'split' ? '_cur' : l.executorId || '';
+  const opts = [...o.infIds, ...ativos().map(x => x.id).filter(id => !o.infIds.includes(id))];
+  return `<select class="inp" data-lx="${esc(l.id)}" data-k="${esc(o.k)}" style="${cur ? '' : 'border-color:var(--warn)'}">
+    ${cur ? '' : `<option value="" selected>${o.nInf >= 2 ? '⚠ escolher…' : '— sem executor —'}</option>`}
+    ${cur === '_cur' ? `<option value="_cur" selected>÷ ${esc(partesTxt(l.split))}</option>` : ''}
+    ${opts.map(id => `<option value="${id}" ${cur === id ? 'selected' : ''}>${esc(dentById(id)?.nome || '?')}${o.inf[id] ? ' (informou)' : ''}</option>`).join('')}
+    <option value="_split">÷ Dividir a guia toda…</option></select>`;
+}
 function valorSelect(o) {
+  if (o.dec?.destino?.tipo === 'linhas' && !(Math.abs(o.dif) > tolV() && o.nInf)) return '<span class="muted" style="font-size:12px">sistema</span>';
   if (o.ne) return `<span class="muted" style="font-size:12px">informado</span>`;
   if (!o.nInf || o.regra) return '<span class="muted">—</span>';
   const v = o.dec?.valor || (o.st === 'resolvido' && Math.abs(o.dif) > tolV() ? 'sistema' : '');
@@ -780,20 +795,36 @@ function renderPainel() {
   const PG = 50, pages = Math.max(1, Math.ceil(list.length / PG)); if (P.page >= pages) P.page = pages - 1;
   const sl = list.slice(P.page * PG, (P.page + 1) * PG);
   const infCell = o => (!o.nInf && o.viaAt) ? `<span class="muted" style="font-size:11px" title="Atendimento ${esc(o.lines[0]?.atendimento)}: informado ${brl(o.viaAt.inf)} nas guias ${esc(o.viaAt.guias.join(', '))}">pelo atendimento</span>` : !o.nInf ? '<span class="muted">—</span>' : o.infIds.map(id => `<div style="line-height:1.25;margin:2px 0" title="${esc(dentById(id)?.nome)}: ${esc((o.inf[id].procs || []).join('; '))}${o.inf[id].viaAt ? ' (informado pelo atendimento)' : ''}"><span style="white-space:nowrap">${brl(o.inf[id].valor)}</span><br><span class="muted" style="font-family:Manrope;font-size:11px;white-space:normal">${esc(dentById(id)?.nome || '?')}</span></div>`).join('');
-  $('#tblPainel').innerHTML = `<colgroup><col style="width:7%"><col style="width:11%"><col style="width:10%"><col style="width:14%"><col style="width:13%"><col style="width:7%"><col style="width:11%"><col style="width:7%"><col style="width:9%"><col style="width:11%"></colgroup>
+  // a guia aparece linha a linha (um procedimento por linha), como na planilha da clínica;
+  // informado, diferença, status e valor a pagar valem para o grupo da guia
+  const naPag = new Set(sl.map(o => o.k));
+  const blocos = [];
+  sl.forEach(o => {
+    if (o.regra && naPag.has('g:' + o.k.slice(2))) return;
+    const irmao = !o.ne && !o.regra ? all.find(x => x.k === 'r:' + o.k.slice(2)) : null;
+    blocos.push([o, ...(irmao ? [irmao] : [])]);
+  });
+  const statusCell = o => `<span class="tag ${RST[o.st][1]}" title="${o.nInf >= 2 ? `${o.nInf} dentistas informaram a guia na produção` : o.viaAt ? `Conferido pelo atendimento ${o.lines[0]?.atendimento}: informado ${brl(o.viaAt.inf)} = sistema ${brl(o.viaAt.sis)} (guias ${o.viaAt.guias.join(', ')})` : ''}">${RST[o.st][0]}${o.viaAt ? '*' : ''}</span>${o.dec || (o.trava && o.outrosInf?.length) ? ` <button class="btn ghost sm" data-gu="${esc(o.k)}" title="${o.dec ? 'Desfazer decisão' : 'Destravar: volta a ser conferida com todos que informaram'}" style="padding:2px 6px">↺</button>` : ''}${(() => { const sg = sugestaoHist(o); const t = o.inclRegra && !o.trava ? `valor informado inclui a consulta da mesma guia (${brl(o.inclRegra)})` : o.trava && o.outrosInf?.length ? `🔒 travada com ${dentById(o.trava.dentistaId)?.nome || ''} · ${o.outrosInf.map(id => dentById(id)?.nome || '?').join(', ')} também informou, não altera` : o.porRegra ? 'definida por regra (ex.: Consulta → CLINICA)' : o.st === 'nao_planilha' && !o.semExec ? `vai para ${esc(dentById(o.executores[0])?.nome || '')} (Resp. no sistema)` : o.st === 'nao_planilha' ? '⚠ escolha quem fez em Executor' : ''; return (sg || t) ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${sg ? `<span style="color:var(--info)">↪ ${esc(sg.txt)}</span>` : esc(t)}</div>` : ''; })()}${o.st === 'resolvido' ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${o.dec?.destino ? (o.dec.destino.tipo === 'split' ? 'dividida entre dentistas' : o.dec.destino.tipo === 'linhas' ? 'executor escolhido por procedimento' : 'executor escolhido') : 'executor associado'}${o.nInf && Math.abs(o.dif) > tolV() ? ` · paga o valor ${o.dec?.valor === 'informado' ? 'informado' : 'do sistema'}` : ''}</div>` : ''}`;
+  const difCell = o => `<td class="num" style="color:${!o.nInf || o.viaAt || Math.abs(o.dif) <= tolV() ? 'var(--muted)' : o.dif > 0 ? 'var(--bad)' : 'var(--info)'}" ROWSPAN>${o.viaAt ? `<span title="Bate pelo atendimento">≈ 0</span>` : o.nInf ? brl(o.dif) : '—'}</td>`;
+  const html = blocos.map(bl => {
+    const total = bl.reduce((a, o) => a + Math.max(1, o.lines.length), 0), o0 = bl[0];
+    let first = true;
+    return bl.map((o, gi) => { const ls = o.ne ? [null] : o.lines; return ls.map((l, li) => {
+      const rs = ` rowspan="${ls.length}"`, cells = [];
+      if (first) { first = false;
+        cells.push(`<td class="two" rowspan="${total}"><span class="l mono" style="font-size:12px">${esc(o0.guia)}</span><small>${o0.data ? new Date(o0.data).toLocaleDateString('pt-BR').slice(0, 5) : ''}${o0.lines[0]?.atendimento ? ' · ' + esc(o0.lines[0].atendimento) : ''}${total > 1 ? ` · ${total} proc.` : ''}</small></td>`,
+          `<td rowspan="${total}">${esc(o0.paciente || '—')}</td>`); }
+      if (!l) cells.push('<td class="muted">—</td>', `<td>${esc(o.procs[0] || '—')}</td>`, `<td>${execSelect(o)}</td>`, '<td class="num"><span class="muted">—</span></td>');
+      else cells.push(`<td class="${!l.dentistaSistema || GENERIC.test(l.dentistaSistema) ? 'muted' : ''}">${esc(l.dentistaSistema || '—')}</td>`, `<td>${esc(l.procedimento || '—')}</td>`, `<td>${linhaSelect(o, l)}</td>`, `<td class="num">${brl(l.valor)}</td>`);
+      if (li === 0) cells.push(`<td class="num"${rs}>${o.regra ? '<span class="muted">—</span>' : infCell(o)}</td>`, difCell(o).replace('ROWSPAN', rs), `<td${rs}>${statusCell(o)}</td>`, `<td${rs}>${valorSelect(o)}</td>`);
+      return `<tr class="${li === 0 && gi > 0 ? 'sub' : ''} ${li > 0 ? 'cont' : ''}">${cells.join('')}</tr>`;
+    }).join(''); }).join('');
+  }).join('');
+  const nLinhas = blocos.reduce((a, bl) => a + bl.reduce((x, o) => x + Math.max(1, o.lines.length), 0), 0);
+  $('#tblPainel').innerHTML = `<colgroup><col style="width:7%"><col style="width:10%"><col style="width:10%"><col style="width:15%"><col style="width:13%"><col style="width:7%"><col style="width:11%"><col style="width:7%"><col style="width:9%"><col style="width:11%"></colgroup>
     <thead><tr><th>Guia</th><th>Paciente</th><th>Resp. no sistema</th><th>Procedimento</th><th>Executor</th><th class="num">Sistema</th><th class="num">Informado</th><th class="num">Dif.</th><th>Status</th><th>Valor a pagar</th></tr></thead>
-    <tbody>${sl.length ? sl.map(o => `<tr>
-      <td class="two"><span class="l mono" style="font-size:12px">${esc(o.guia)}</span><small>${o.data ? new Date(o.data).toLocaleDateString('pt-BR').slice(0, 5) : ''}${o.lines[0]?.atendimento ? ' · ' + esc(o.lines[0].atendimento) : ''}</small></td>
-      <td title="${esc(o.paciente)}">${esc(o.paciente || '—')}</td>
-      <td title="${esc(o.resp.join(', '))}" class="${o.resp.every(r => GENERIC.test(r)) ? 'muted' : ''}">${esc(o.resp.join(', ') || '—')}</td>
-      <td class="${o.procs.length > 1 ? 'two' : ''}" title="${esc(o.procs.join('; '))}">${o.procs.length > 1 ? `<span class="l">${esc(o.procs[0])}</span><small>+ ${o.procs.length - 1}: ${esc(o.procs.slice(1).join('; '))}</small>` : esc(o.procs[0] || '—')}</td>
-      <td>${execSelect(o)}</td>
-      <td class="num">${o.ne ? '<span class="muted">—</span>' : brl(o.sis)}</td>
-      <td class="num">${infCell(o)}</td>
-      <td class="num" style="color:${!o.nInf || o.viaAt || Math.abs(o.dif) <= tolV() ? 'var(--muted)' : o.dif > 0 ? 'var(--bad)' : 'var(--info)'}">${o.viaAt ? `<span title="Bate pelo atendimento">≈ 0</span>` : o.nInf ? brl(o.dif) : '—'}</td>
-      <td><span class="tag ${RST[o.st][1]}" title="${o.nInf >= 2 ? `${o.nInf} dentistas informaram a guia na produção` : o.viaAt ? `Conferido pelo atendimento ${o.lines[0]?.atendimento}: informado ${brl(o.viaAt.inf)} = sistema ${brl(o.viaAt.sis)} (guias ${o.viaAt.guias.join(', ')})` : ''}">${RST[o.st][0]}${o.viaAt ? '*' : ''}</span>${o.dec || (o.trava && o.outrosInf?.length) ? ` <button class="btn ghost sm" data-gu="${esc(o.k)}" title="${o.dec ? 'Desfazer decisão' : 'Destravar: volta a ser conferida com todos que informaram'}" style="padding:2px 6px">↺</button>` : ''}${(() => { const sg = sugestaoHist(o); const t = o.trava && o.outrosInf?.length ? `🔒 travada com ${dentById(o.trava.dentistaId)?.nome || ''} · ${o.outrosInf.map(id => dentById(id)?.nome || '?').join(', ')} também informou, não altera` : o.porRegra ? 'definida por regra (ex.: Consulta → CLINICA)' : o.st === 'nao_planilha' && !o.semExec ? `vai para ${esc(dentById(o.executores[0])?.nome || '')} (Resp. no sistema)` : o.st === 'nao_planilha' ? '⚠ escolha quem fez em Executor' : ''; return (sg || t) ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${sg ? `<span style="color:var(--info)">↪ ${esc(sg.txt)}</span>` : esc(t)}</div>` : ''; })()}${o.st === 'resolvido' ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${o.dec?.destino ? (o.dec.destino.tipo === 'split' ? 'dividida entre dentistas' : 'executor escolhido') : 'executor associado'}${o.nInf && Math.abs(o.dif) > tolV() ? ` · paga o valor ${o.dec?.valor === 'informado' ? 'informado' : 'do sistema'}` : ''}</div>` : ''}</td>
-      <td>${valorSelect(o)}</td></tr>`).join('') : `<tr><td colspan="10" class="empty">${P.f === 'pend' ? '✓ Nenhuma pendência neste filtro.' : 'Nada neste filtro.'}</td></tr>`}</tbody>
-    <tfoot><tr><td colspan="5">${n0(list.length)} guia(s)</td><td class="num">${brl(list.reduce((a, o) => a + o.sis, 0))}</td><td class="num">${brl(list.reduce((a, o) => a + (o.maxInf || 0), 0))}</td><td></td><td></td><td></td></tr></tfoot>`;
+    <tbody>${html || `<tr><td colspan="10" class="empty">${P.f === 'pend' ? '✓ Nenhuma pendência neste filtro.' : 'Nada neste filtro.'}</td></tr>`}</tbody>
+    <tfoot><tr><td colspan="5">${n0(list.length)} guia(s) · ${n0(nLinhas)} procedimento(s) nesta página</td><td class="num">${brl(list.reduce((a, o) => a + o.sis, 0))}</td><td class="num">${brl(list.reduce((a, o) => a + (o.maxInf || 0), 0))}</td><td></td><td></td><td></td></tr></tfoot>`;
   $('#pagerPainel').innerHTML = `<span>${n0(list.length)} guia(s)</span><span class="sp"></span><button class="btn sm" ${P.page ? '' : 'disabled'} data-pp="-1">‹</button><span>pág. ${P.page + 1} de ${pages}</span><button class="btn sm" ${P.page < pages - 1 ? '' : 'disabled'} data-pp="1">›</button>`;
   $('#pagerPainel').querySelectorAll('[data-pp]').forEach(b => b.onclick = () => { P.page += +b.dataset.pp; renderPainel(); });
   // KPI de pendências a partir da tabela
@@ -811,6 +842,7 @@ function bindConf(T) {
     const cur = o.dec?.destino?.tipo === 'split' ? o.dec.destino.partes : o.nInf >= 2 ? o.infIds.map(id => ({ dentistaId: id, pct: +(100 / o.nInf).toFixed(2) })) : [{ dentistaId: o.infIds[0] || o.executores[0] || '', pct: 50 }, { dentistaId: '', pct: 50 }];
     const r = await abrirSplit({ titulo: `Dividir a guia ${o.guia}`, hint: `${o.paciente || ''} · ${o.procs.join('; ')}`, total: valor === 'informado' && o.maxInf != null ? o.maxInf : o.sis, partes: cur, podeRemover: false });
     if (!r) { renderPainel(); return; }
+    o.lines.forEach(y => delete S.overrides[y.id]);
     setDec(o.k, { destino: { tipo: 'split', partes: r.partes }, valor: valor || o.dec?.valor || (Math.abs(o.dif) > tolV() ? undefined : 'sistema') });
   };
   T.querySelectorAll('[data-gx]').forEach(x => x.onchange = () => {
@@ -819,6 +851,22 @@ function bindConf(T) {
     if (o.lines.some(l => linhaPgto(l.id))) toast('Atenção: esta guia já foi enviada para pagamento.');
     setDec(o.k, { destino: { tipo: 'dentista', dentistaId: x.value }, valor: o.dec?.valor || (Math.abs(o.dif) > tolV() && o.nInf ? undefined : 'sistema') });
   });
+  T.querySelectorAll('[data-lx]').forEach(x => x.onchange = () => {
+    const o = row(x.dataset.k), l = o.lines.find(y => String(y.id) === x.dataset.lx), v = x.value;
+    if (v === '_cur' || !l) return;
+    if (v === '_split') { split(o, o.dec?.valor); return; }
+    if (o.lines.some(y => linhaPgto(y.id))) toast('Atenção: esta guia já foi enviada para pagamento.');
+    const outras = o.lines.filter(y => y !== l && !y.pend);
+    if (!outras.length || outras.every(y => (S.overrides[y.id] ?? y.executorId) === v && y.origem !== 'split')) {
+      o.lines.forEach(y => delete S.overrides[y.id]);
+      setDec(o.k, { destino: { tipo: 'dentista', dentistaId: v }, valor: o.dec?.valor || (Math.abs(o.dif) > tolV() && o.nInf ? undefined : 'sistema') });
+    } else {
+      o.lines.forEach(y => { if (y !== l && S.overrides[y.id] === undefined) S.overrides[y.id] = y.origem === 'split' ? '' : (y.executorId || ''); });
+      S.overrides[l.id] = v; delete S.overridesAuto?.[l.id];
+      setDec(o.k, { destino: { tipo: 'linhas' }, valor: 'sistema' });
+      toast('Executor definido só para este procedimento.');
+    }
+  });
   T.querySelectorAll('[data-gv]').forEach(x => x.onchange = () => {
     const o = row(x.dataset.gv); const valor = x.value || undefined;
     let destino = o.dec?.destino;
@@ -826,7 +874,7 @@ function bindConf(T) {
     if (valor && !destino) { S.decGuia[o.k] = { ...(S.decGuia[o.k] || {}), valor }; toast('Agora escolha o executor (associar a um dentista ou dividir).'); renderPainel(); salvar(); return; }
     setDec(o.k, { valor, destino });
   });
-  T.querySelectorAll('[data-gu]').forEach(b => b.onclick = () => { const k = b.dataset.gu; if (S.decGuia[k]) { delete S.decGuia[k]; delete S.decGuiaAuto[k]; toast('Decisão desfeita'); } else { delete S.trava[k]; S.travaOff = S.travaOff || {}; toast('Guia destravada: volta a ser conferida com todos que informaram'); } run(false); salvar(); });
+  T.querySelectorAll('[data-gu]').forEach(b => b.onclick = () => { const k = b.dataset.gu; if (S.decGuia[k]) { delete S.decGuia[k]; delete S.decGuiaAuto[k]; (row(k)?.lines || []).forEach(y => delete S.overrides[y.id]); toast('Decisão desfeita'); } else { delete S.trava[k]; S.travaOff = S.travaOff || {}; toast('Guia destravada: volta a ser conferida com todos que informaram'); } run(false); salvar(); });
   T.querySelectorAll('[data-ne]').forEach(sl => sl.onchange = () => {
     const id = sl.dataset.ne, x = S.result.naoEncontradas.find(y => y.id === id), cur = S.lancamentos[id] || {};
     if (!sl.value) delete S.lancamentos[id]; else if (sl.value === '_x') S.lancamentos[id] = { descartado: true }; else S.lancamentos[id] = { dentistaId: sl.value, valor: cur.valor ?? x.valor ?? 0 };
