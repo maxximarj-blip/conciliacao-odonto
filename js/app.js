@@ -637,9 +637,9 @@ const ORIG_LBL = { dentista: 'Dentista (guia)', atendimento: 'Dentista (atendime
 /* ===================== conferência das guias (uma linha por guia) ===================== */
 const DEC = { pendente: '⚠ Pendente', sistema: 'Manter sistema', informado: 'Usar valor informado', split: '÷ Dividir entre dentistas' };
 const RST = { match: ['✓ Match', 'st-ok'], dois: ['⚠ Dois dentistas informaram', 'st-outro'], valor: ['≠ Divergência de valor', 'st-dif'],
-  nao_planilha: ['Não encontrado na planilha', 'st-so_sistema'], nao_sistema: ['Não encontrado no sistema', 'st-nao_localizado'], resolvido: ['✓ Resolvido', 'st-ok'] };
+  nao_planilha: ['Não encontrado na planilha', 'st-so_sistema'], sistema: ['✓ Pago pelo sistema', 'st-ok'], nao_sistema: ['Não encontrado no sistema', 'st-nao_localizado'], resolvido: ['✓ Resolvido', 'st-ok'] };
 const ehPend = o => o.st === 'dois' || o.st === 'valor' || o.st === 'nao_sistema' || (o.st === 'nao_planilha' && o.semExec);
-const noFiltro = (o, f) => f === 'todos' || (f === 'pend' ? ehPend(o) : f === 'nao' ? (o.st === 'nao_planilha' || o.st === 'nao_sistema') : o.st === f);
+const noFiltro = (o, f) => f === 'todos' || (f === 'pend' ? ehPend(o) : f === 'nao' ? (o.st === 'nao_planilha' || o.st === 'nao_sistema') : f === 'match' ? (o.st === 'match' || o.st === 'sistema') : o.st === f);
 const RSEG = [['pend', '⚠ Pendências'], ['todos', 'Todas'], ['match', '✓ Match'], ['dois', 'Dois dentistas informaram'], ['valor', 'Divergência de valor'], ['nao', 'Não encontrado'], ['resolvido', 'Resolvido']];
 S.painel = { f: 'pend', page: 0 };
 S.gf = { dent: '', q: '' };
@@ -705,7 +705,7 @@ function buildLinhasConf() {
     else if (o.nInf >= 2) o.st = 'dois';
     else if (o.nInf === 1 && Math.abs(o.dif) > tolV()) o.st = 'valor';
     else if (o.nInf === 1) o.st = 'match';
-    else o.st = 'nao_planilha';
+    else o.st = semEx ? 'nao_planilha' : 'sistema';
     o.resp = [...o.resp];
     o.busca = Core.norm([o.guia, o.paciente, ...o.procs, ...o.resp, o.lines[0]?.atendimento].join(' '));
     return o;
@@ -724,7 +724,7 @@ function buildLinhasConf() {
       const gs = rs.filter(o => o.inf[D] || o.executores.includes(D));
       gs.forEach(o => {
         if (o.dec?.destino || o.nInf >= 2) return;
-        if (['valor', 'nao_planilha', 'match'].includes(o.st) && (o.inf[D] || (o.executores.length === 1 && o.executores[0] === D && !o.semExec))) {
+        if (['valor', 'nao_planilha', 'sistema', 'match'].includes(o.st) && (o.inf[D] || (o.executores.length === 1 && o.executores[0] === D && !o.semExec))) {
           o.st = 'match'; o.viaAt = { dentistaId: D, guias: rs.map(x => x.guia), inf, sis };
         }
       });
@@ -810,7 +810,7 @@ function renderPainel() {
     const irmao = !o.ne && !o.regra ? all.find(x => x.k === 'r:' + o.k.slice(2)) : null;
     blocos.push([o, ...(irmao ? [irmao] : [])]);
   });
-  const statusCell = o => `<span class="tag ${RST[o.st][1]}" title="${o.nInf >= 2 ? `${o.nInf} dentistas informaram a guia na produção` : o.viaAt ? `Conferido pelo atendimento ${o.lines[0]?.atendimento}: informado ${brl(o.viaAt.inf)} = sistema ${brl(o.viaAt.sis)} (guias ${o.viaAt.guias.join(', ')})` : ''}">${RST[o.st][0]}${o.viaAt ? '*' : ''}</span>${o.dec || (o.trava && o.outrosInf?.length) ? ` <button class="btn ghost sm" data-gu="${esc(o.k)}" title="${o.dec ? 'Desfazer decisão' : 'Destravar: volta a ser conferida com todos que informaram'}" style="padding:2px 6px">↺</button>` : ''}${(() => { const sg = sugestaoHist(o); const t = o.inclRegra && !o.trava ? `valor informado inclui a consulta da mesma guia (${brl(o.inclRegra)})` : o.trava && o.outrosInf?.length ? `🔒 travada com ${dentById(o.trava.dentistaId)?.nome || ''} · ${o.outrosInf.map(id => dentById(id)?.nome || '?').join(', ')} também informou, não altera` : o.porRegra ? (o.lines.find(l => l.regraTxt)?.regraTxt || 'definida por regra') : o.st === 'nao_planilha' && !o.semExec ? `vai para ${esc(dentById(o.executores[0])?.nome || '')} (Resp. no sistema)` : o.st === 'nao_planilha' ? '⚠ escolha quem fez em Executor' : ''; return (sg || t) ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${sg ? `<span style="color:var(--info)">↪ ${esc(sg.txt)}</span>` : esc(t)}</div>` : ''; })()}${o.st === 'resolvido' ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${o.dec?.destino ? (o.dec.destino.tipo === 'split' ? 'dividida entre dentistas' : o.dec.destino.tipo === 'linhas' ? 'executor escolhido por procedimento' : 'executor escolhido') : 'executor associado'}${o.nInf && Math.abs(o.dif) > tolV() ? ` · paga ${o.dec?.valor === 'livre' ? `o valor livre ${brl(o.dec.livre)}` : `o valor ${o.dec?.valor === 'informado' ? 'informado' : 'do sistema'}`}` : ''}</div>` : ''}`;
+  const statusCell = o => `<span class="tag ${RST[o.st][1]}" title="${o.nInf >= 2 ? `${o.nInf} dentistas informaram a guia na produção` : o.viaAt ? `Conferido pelo atendimento ${o.lines[0]?.atendimento}: informado ${brl(o.viaAt.inf)} = sistema ${brl(o.viaAt.sis)} (guias ${o.viaAt.guias.join(', ')})` : ''}">${RST[o.st][0]}${o.viaAt ? '*' : ''}</span>${o.dec || (o.trava && o.outrosInf?.length) ? ` <button class="btn ghost sm" data-gu="${esc(o.k)}" title="${o.dec ? 'Desfazer decisão' : 'Destravar: volta a ser conferida com todos que informaram'}" style="padding:2px 6px">↺</button>` : ''}${(() => { const sg = sugestaoHist(o); const t = o.inclRegra && !o.trava ? `valor informado inclui a consulta da mesma guia (${brl(o.inclRegra)})` : o.trava && o.outrosInf?.length ? `🔒 travada com ${dentById(o.trava.dentistaId)?.nome || ''} · ${o.outrosInf.map(id => dentById(id)?.nome || '?').join(', ')} também informou, não altera` : o.porRegra ? (o.lines.find(l => l.regraTxt)?.regraTxt || 'definida por regra') : o.st === 'sistema' ? `não está na planilha do dentista; pago a ${dentById(o.executores[0])?.nome || ''} (Resp. no sistema)` : o.st === 'nao_planilha' ? '⚠ escolha quem fez em Executor' : ''; return (sg || t) ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${sg ? `<span style="color:var(--info)">↪ ${esc(sg.txt)}</span>` : esc(t)}</div>` : ''; })()}${o.st === 'resolvido' ? `<div class="muted" style="font-size:11px;line-height:1.3;margin-top:3px">${o.dec?.destino ? (o.dec.destino.tipo === 'split' ? 'dividida entre dentistas' : o.dec.destino.tipo === 'linhas' ? 'executor escolhido por procedimento' : 'executor escolhido') : 'executor associado'}${o.nInf && Math.abs(o.dif) > tolV() ? ` · paga ${o.dec?.valor === 'livre' ? `o valor livre ${brl(o.dec.livre)}` : `o valor ${o.dec?.valor === 'informado' ? 'informado' : 'do sistema'}`}` : ''}</div>` : ''}`;
   const difCell = o => `<td class="num" style="color:${!o.nInf || o.viaAt || Math.abs(o.dif) <= tolV() ? 'var(--muted)' : o.dif > 0 ? 'var(--bad)' : 'var(--info)'}" ROWSPAN>${o.viaAt ? `<span title="Bate pelo atendimento">≈ 0</span>` : o.nInf ? brl(o.dif) : '—'}</td>`;
   const html = blocos.map(bl => {
     const total = bl.reduce((a, o) => a + Math.max(1, o.lines.length), 0), o0 = bl[0];
@@ -1044,7 +1044,7 @@ async function carregarHistorico() {
     const cid = S.conc?.id || '00000000-0000-0000-0000-000000000000';
     const ne = S.result.naoEncontradas;
     const gNE = [...new Set(ne.map(x => x.guiaN).filter(Boolean))], aNE = [...new Set(ne.map(x => x.atend).filter(Boolean))];
-    const gNP = [...new Set((S.linhasConf || buildLinhasConf()).filter(o => o.st === 'nao_planilha').map(o => o.lines[0]?.guia).filter(Boolean))];
+    const gNP = [...new Set((S.linhasConf || buildLinhasConf()).filter(o => o.st === 'nao_planilha' || o.st === 'sistema').map(o => o.lines[0]?.guia).filter(Boolean))];
     const busca = async (tipo, col, vals, alvo) => {
       for (let i = 0; i < vals.length; i += 80) {
         const r = await sb.from('guias_index').select('competencia,guia,atendimento,dentista_id,dentista_nome,valor').eq('tipo', tipo).in(col, vals.slice(i, i + 80)).neq('conciliacao_id', cid).order('competencia', { ascending: false });
@@ -1073,7 +1073,7 @@ function sugestaoHist(o) {
     if (hs.length) return { tipo: 'outro_mes', txt: `Está na planilha da clínica de ${compTxt(hs[0].competencia)}`, comp: hs[0].competencia };
     return S.hist.ok ? { tipo: 'nenhum', txt: 'Não aparece em nenhum outro mês carregado' } : null;
   }
-  if (o.st === 'nao_planilha') {
+  if (o.st === 'nao_planilha' || o.st === 'sistema') {
     const hs = (S.hist.inf[o.lines[0]?.guia] || []).filter(h => dentById(h.dentista_id)?.ativo);
     if (hs.length) return { tipo: 'informado_outro_mes', txt: `Informada por ${dentById(hs[0].dentista_id).nome} na produção de ${compTxt(hs[0].competencia)}`, dentistaId: hs[0].dentista_id };
     return null;
@@ -1125,7 +1125,7 @@ function renderAjuda(list) {
         <p class="aj-obs">Ou decida na linha, na coluna <b>Executor</b> (escolha o dentista ou "Não considerar").</p></div></div>${filtro}`;
     S._aj = { npHist, npResp, nsOutro, nsResto, ns };
   } else if (P.f === 'match') {
-    h = '<b>Guias que bateram:</b> um dentista informou e o valor confere com o sistema (Match* = confere somando as guias do mesmo atendimento). Também entram aqui as guias definidas por regra (ex.: Consulta → CLINICA). Nada a fazer.';
+    h = '<b>Guias que bateram:</b> um dentista informou e o valor confere com o sistema (Match* = confere somando as guias do mesmo atendimento). Também entram aqui as guias definidas por regra (ex.: Consulta → CLINICA) e as <b>pagas pelo sistema</b>: o dentista não informou, mas a clínica lançou com ele como responsável, então ele recebe. Nada a fazer.';
   } else if (P.f === 'resolvido') {
     h = '<b>Guias que você já decidiu.</b> Embaixo do status aparece o que foi decidido. Para mudar uma, clique no ↺ ao lado do status.';
   } else {
