@@ -255,8 +255,12 @@ const Core = (() => {
       const chave = l => l.atendimento ? 'a' + l.atendimento : 'g' + l.guia, tot = new Map();
       linhas.forEach(l => { if (!l.pend) tot.set(chave(l), (tot.get(chave(l)) || 0) + l.valor); });
       const lim = +regraValor.limite, nome = byId[regraValor.dentistaId].nome;
+      // se um dentista informou valor acima do limite, o valor baixo é do sistema (erro da clínica): a regra não vale
+      const infG = new Map(), infA = new Map();
+      files.forEach(f => (f.itens || []).forEach(it => { if (it.guia) infG.set(it.guia, (infG.get(it.guia) || 0) + (it.valor || 0)); if (it.atend) infA.set(it.atend, (infA.get(it.atend) || 0) + (it.valor || 0)); }));
       linhas.forEach(l => {
         if (l.regra || ehOrto(l)) return;
+        if (Math.max(infG.get(l.guia) || 0, l.atendimento ? infA.get(l.atendimento) || 0 : 0) >= lim - 0.004) return;
         const v = regraValor.modo === 'procedimento' ? l.valor : (tot.get(chave(l)) ?? l.valor);
         if (v < lim - 0.004) { l.executorId = regraValor.dentistaId; l.origem = 'regra'; l.alerta = ''; l.candidatos = []; l.regra = true;
           l.regraTxt = `Regra: ${regraValor.modo === 'procedimento' ? 'procedimento' : 'atendimento'} abaixo de R$ ${lim.toFixed(2).replace('.', ',')} → ${nome}`; }

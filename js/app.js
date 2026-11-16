@@ -783,7 +783,7 @@ function linhaSelect(o, l) {
 function valorSelect(o) {
   if (o.dec?.destino?.tipo === 'linhas' && !(Math.abs(o.dif) > tolV() && o.nInf)) return '<span class="muted" style="font-size:12px">sistema</span>';
   if (o.ne) return `<span class="muted" style="font-size:12px">informado</span>`;
-  if (!o.nInf || o.regra) return '<span class="muted">—</span>';
+  if (!o.nInf || (o.regra && !o.dec && Math.abs(o.dif) <= tolV())) return '<span class="muted">—</span>';
   const v = o.dec?.valor || (o.st === 'resolvido' && Math.abs(o.dif) > tolV() ? 'sistema' : '');
   const precisa = Math.abs(o.dif) > tolV();
   if (!precisa && !v) return '<span class="muted" style="font-size:12px">igual</span>';
@@ -822,7 +822,7 @@ function renderPainel() {
           `<td rowspan="${total}">${esc(o0.paciente || '—')}</td>`); }
       if (!l) cells.push('<td class="muted">—</td>', `<td>${esc(o.procs[0] || '—')}</td>`, `<td>${execSelect(o)}</td>`, '<td class="num"><span class="muted">—</span></td>');
       else cells.push(`<td class="${!l.dentistaSistema || GENERIC.test(l.dentistaSistema) ? 'muted' : ''}">${esc(l.dentistaSistema || '—')}</td>`, `<td>${esc(l.procedimento || '—')}</td>`, `<td>${linhaSelect(o, l)}</td>`, `<td class="num">${brl(l.valor)}</td>`);
-      if (li === 0) cells.push(`<td class="num"${rs}>${o.regra ? '<span class="muted">—</span>' : infCell(o)}</td>`, difCell(o).replace('ROWSPAN', rs), `<td${rs}>${statusCell(o)}</td>`, `<td${rs}>${valorSelect(o)}</td>`);
+      if (li === 0) cells.push(`<td class="num"${rs}>${o.regra && !o.nInf ? '<span class="muted">—</span>' : infCell(o)}</td>`, difCell(o).replace('ROWSPAN', rs), `<td${rs}>${statusCell(o)}</td>`, `<td${rs}>${valorSelect(o)}</td>`);
       return `<tr class="${li === 0 && gi > 0 ? 'sub' : ''} ${li > 0 ? 'cont' : ''}">${cells.join('')}</tr>`;
     }).join(''); }).join('');
   }).join('');
