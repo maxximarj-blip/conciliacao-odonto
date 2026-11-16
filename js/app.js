@@ -562,27 +562,28 @@ function renderConferencia() {
     ? 'Comparação por atendimento entre o que o dentista informou na planilha de produção e o que foi apurado no sistema para ele (linhas atribuídas, divisões e ajustes). Guias pendentes em aberto não entram no apurado.'
     : 'Este dentista não enviou planilha de produção nesta competência: tudo que aparece foi apurado pelo sistema (regras, Resp. no sistema ou atribuição manual).';
   const k = (t, v, sub, cls = '') => `<div class="kpi ${cls}"><span>${t}</span><b>${v}</b><small>${sub}</small></div>`;
-  $('#dmKpis').innerHTML = k('Informado pelo dentista', brl(C.informado), `${n0(C.rows.filter(r => r.temInf).length)} atendimento(s)`) + k('Apurado no sistema', brl(C.apurado), `${n0(C.rows.filter(r => r.temSis).length)} atendimento(s)`)
-    + k('Diferença', brl(C.dif), Math.abs(C.dif) < 0.05 ? 'valores batem' : C.dif > 0 ? 'informou mais do que foi apurado' : 'apurado maior que o informado', Math.abs(C.dif) >= 0.05 ? 'bad' : '')
-    + k('Conciliados', `${n0(C.ok)} de ${n0(C.rows.filter(r => !r.glosa).length)}`, `${n0(C.difs)} com diferença · ${n0(C.soSistema)} só no sistema · ${n0(C.outro + C.pendente + C.naoLocalizado)} outros`)
-    + (() => { const rs = S.result.resumo.find(x => x.dentistaId === id), rem = remDent(id); return k('Comissão apurada', brl(rs?.comissao || 0), rem.forma === 'percentual' ? `${rem.valor}% de ${brl(rs?.base || 0)}${C.glosas ? ` · glosas ${brl(C.glosas)}` : ''}` : rem.forma === 'diaria' ? `${rs?.diarias || 0} diária(s) × ${brl(rem.valor)}` : 'valor fixo', 'ok'); })();
+  const rsD = S.result.resumo.find(x => x.dentistaId === id), remD = remDent(id);
+  $('#dmKpis').innerHTML = k('Atendimentos', n0(C.rows.filter(r => !r.glosa).length), `${n0(C.rows.filter(r => r.base).length)} entram na comissão`)
+    + k('Conciliados', `${n0(C.ok)} de ${n0(C.rows.filter(r => !r.glosa).length)}`, `${n0(C.difs)} com diferença · ${n0(C.outro + C.pendente + C.naoLocalizado)} fora da comissão`)
+    + k('Glosas descontadas', brl(C.glosas || 0), C.glosas ? 'reduzem o valor considerado' : 'nenhuma neste mês')
+    + k('Valor considerado', brl(rsD?.base || 0), 'base de cálculo da comissão')
+    + k('Comissão apurada', brl(rsD?.comissao || 0), remD.forma === 'percentual' ? `${remD.valor}% de ${brl(rsD?.base || 0)}` : remD.forma === 'diaria' ? `${rsD?.diarias || 0} diária(s) × ${brl(remD.valor)}` : 'valor fixo', 'ok');
   const tabs = [['todas', 'Todos', C.rows.length], ['ok', ST_LBL.ok, C.ok], ['dif', ST_LBL.dif, C.difs], ['so_sistema', ST_LBL.so_sistema, C.soSistema], ['outro', 'Com outro dentista', C.outro], ['pendente', 'Pendente', C.pendente], ['nao_localizado', 'Não está no sistema', C.naoLocalizado], ['glosa', 'Glosas', C.rows.filter(r => r.glosa).length]].filter(t => t[0] === 'todas' || t[2]);
   $('#dmSeg').innerHTML = tabs.map(([kk, t, c]) => `<button class="${dmState.f === kk ? 'on' : ''}" data-dmf="${kk}">${t}<em>${c}</em></button>`).join('');
   $('#dmSeg').querySelectorAll('button').forEach(b => b.onclick = () => { dmState.f = b.dataset.dmf; renderConferencia(); });
   dmState.C = C;
   const rows = C.rows.filter(r => dmState.f === 'todas' || r.status === dmState.f);
   const com = r => comissaoLinha(id, r.base);
-  $('#dmTbl').innerHTML = `<colgroup><col style="width:15%"><col style="width:11%"><col style="width:22%"><col style="width:8%"><col style="width:8%"><col style="width:7%"><col style="width:8%"><col style="width:21%"></colgroup>
-    <thead><tr><th>Atendimento / paciente</th><th>Guia(s)</th><th>Procedimentos (informado · apurado)</th><th class="num">Informado</th><th class="num">Apurado</th><th class="num">Dif.</th><th class="num" title="Comissão apurada sobre a base comissionável desta linha">Comissão</th><th>Situação</th></tr></thead>
+  $('#dmTbl').innerHTML = `<colgroup><col style="width:17%"><col style="width:12%"><col style="width:27%"><col style="width:10%"><col style="width:9%"><col style="width:25%"></colgroup>
+    <thead><tr><th>Atendimento / paciente</th><th>Guia(s)</th><th>Procedimentos (informado · apurado)</th><th class="num" title="Valor que entra no cálculo da comissão">Valor considerado</th><th class="num">Comissão</th><th>Situação</th></tr></thead>
     <tbody>${rows.length ? rows.map(r => `<tr>
       <td class="two"><a href="#" class="dmgo" data-dmgo="${esc(r.tipoRef === 'a' ? r.ref : (r.guiasSis[0] || r.guiasInf[0] || r.paciente || ''))}" title="Abrir esta linha na conferência das guias"><span class="l"><span class="mono" style="font-size:12px">${r.tipoRef === 'a' ? esc(r.ref) : '—'}</span> · ${esc(r.paciente || '—')}</span></a><small>${r.data ? new Date(r.data).toLocaleDateString('pt-BR') : ''}</small></td>
       <td class="two"><span class="l mono" style="font-size:12px">${esc(r.guiasInf.join(', ') || '—')}</span><small class="mono">${r.guiasSis.length ? 'sist.: ' + esc(r.guiasSis.join(', ')) : ''}</small></td>
       <td class="two"><span class="l">${esc(r.procInf.join('; ') || '—')}</span><small>${esc(r.procSis.join('; ') || '—')}</small></td>
-      <td class="num">${r.temInf ? brl(r.informado) : '—'}</td><td class="num">${r.temSis ? brl(r.apurado) : '—'}</td>
-      <td class="num" style="color:${Math.abs(r.dif) < 0.05 ? 'var(--muted)' : r.dif > 0 ? 'var(--bad)' : 'var(--info)'}">${brl(r.dif)}</td>
+      <td class="num" style="color:${r.base ? (r.base < 0 ? 'var(--bad)' : 'var(--ink)') : 'var(--muted)'}">${r.base ? brl(r.base) : '—'}</td>
       <td class="num"><b style="color:${com(r) < 0 ? 'var(--bad)' : 'var(--ink)'}">${com(r) == null ? '—' : com(r) ? brl(com(r)) : '—'}</b></td>
-      <td><span class="tag st-${r.status === 'glosa' ? 'nao_localizado' : r.status}">${tagDm(r)}</span><div style="font-size:11.5px;line-height:1.35;margin-top:4px;color:var(--ink2)">${esc(situacaoDet(r, id))}</div></td></tr>`).join('') : '<tr><td colspan="8" class="empty">Nada neste filtro.</td></tr>'}</tbody>
-    <tfoot><tr><td colspan="3">${n0(rows.length)} linha(s) · clique no atendimento para abrir a linha na conferência</td><td class="num">${brl(rows.filter(r => !r.glosa).reduce((a, r) => a + r.informado, 0))}</td><td class="num">${brl(rows.reduce((a, r) => a + r.apurado, 0))}</td><td class="num">${brl(rows.reduce((a, r) => a + r.dif, 0))}</td><td class="num">${remDent(id).forma === 'percentual' ? brl(rows.reduce((a, r) => a + (com(r) || 0), 0)) : '—'}</td><td></td></tr></tfoot>`;
+      <td><span class="tag st-${r.status === 'glosa' ? 'nao_localizado' : r.status}">${tagDm(r)}</span><div style="font-size:11.5px;line-height:1.35;margin-top:4px;color:var(--ink2)">${esc(situacaoDet(r, id))}</div></td></tr>`).join('') : '<tr><td colspan="6" class="empty">Nada neste filtro.</td></tr>'}</tbody>
+    <tfoot><tr><td colspan="3">${n0(rows.length)} linha(s) · clique no atendimento para abrir a linha na conferência</td><td class="num">${brl(rows.reduce((a, r) => a + r.base, 0))}</td><td class="num">${remDent(id).forma === 'percentual' ? brl(rows.reduce((a, r) => a + (com(r) || 0), 0)) : '—'}</td><td></td></tr></tfoot>`;
 }
 
 /* ===================== enviado para pagamento ===================== */
@@ -1294,13 +1295,12 @@ $('#dmExport').onclick = () => {
     { Item: 'Dentista', Valor: d?.nome || '' }, { Item: 'Competência', Valor: compLabel(S.conc.competencia) }, { Item: 'Emitido em', Valor: new Date().toLocaleString('pt-BR') },
     { Item: 'Remuneração', Valor: rem.forma === 'percentual' ? `${rem.valor}% da base` : rem.forma === 'diaria' ? `${brl(rem.valor)} por diária` : 'valor fixo' },
     { Item: 'Situação', Valor: !C.temPlanilha ? 'Sem planilha do dentista' : (C.difs + C.outro + C.naoLocalizado + C.soSistema + C.pendente === 0 ? 'Conciliado' : 'Não conciliado') },
-    { Item: 'Informado pelo dentista', Valor: +C.informado.toFixed(2) }, { Item: 'Apurado no sistema', Valor: +C.apurado.toFixed(2) }, { Item: 'Diferença', Valor: +C.dif.toFixed(2) },
-    { Item: 'Glosas descontadas', Valor: +(C.glosas || 0).toFixed(2) }, { Item: 'Base comissionável', Valor: +(rs?.base || 0).toFixed(2) },
+    { Item: 'Glosas descontadas', Valor: +(C.glosas || 0).toFixed(2) }, { Item: 'Valor considerado (base da comissão)', Valor: +(rs?.base || 0).toFixed(2) },
     ...(rem.forma === 'diaria' ? [{ Item: 'Diárias', Valor: rs?.diarias || 0 }] : []),
     { Item: 'Comissão apurada', Valor: +(rs?.comissao || 0).toFixed(2) },
     { Item: 'Atendimentos conciliados', Valor: `${C.ok} de ${C.rows.filter(r => !r.glosa).length}` }, { Item: 'Com diferença', Valor: C.difs }, { Item: 'Só no sistema', Valor: C.soSistema },
     { Item: 'Com outro dentista', Valor: C.outro }, { Item: 'Pendente', Valor: C.pendente }, { Item: 'Não está no sistema', Valor: C.naoLocalizado }], 'Resumo');
-  abaXlsx(wb, C.rows.map(r => ({ Data: r.data ? new Date(r.data).toLocaleDateString('pt-BR') : '', Atendimento: r.tipoRef === 'a' ? r.ref : '', Paciente: r.paciente || '', 'Guia(s) informada(s)': r.guiasInf.join(', '), 'Guia(s) no sistema': r.guiasSis.join(', '), 'Procedimento informado': r.procInf.join('; '), 'Procedimento apurado': r.procSis.join('; '), Informado: r.temInf ? +r.informado.toFixed(2) : '', Apurado: r.temSis ? +r.apurado.toFixed(2) : '', Diferença: +r.dif.toFixed(2), 'Base comissionável': +r.base.toFixed(2), Comissão: com(r) == null ? '' : +com(r).toFixed(2), Situação: tagDm(r), Detalhe: situacaoDet(r, id) })), 'Informado x apurado');
+  abaXlsx(wb, C.rows.map(r => ({ Data: r.data ? new Date(r.data).toLocaleDateString('pt-BR') : '', Atendimento: r.tipoRef === 'a' ? r.ref : '', Paciente: r.paciente || '', 'Guia(s) informada(s)': r.guiasInf.join(', '), 'Guia(s) no sistema': r.guiasSis.join(', '), 'Procedimento informado': r.procInf.join('; '), 'Procedimento apurado': r.procSis.join('; '), 'Valor considerado': +r.base.toFixed(2), Comissão: com(r) == null ? '' : +com(r).toFixed(2), Situação: tagDm(r), Detalhe: situacaoDet(r, id) })), 'Extrato');
   XLSX.writeFile(wb, `Conferencia_${nomeArq(d?.nome || 'dentista')}_${nomeArq(compLabel(S.conc.competencia))}.xlsx`);
 };
 $('#dmPdf').onclick = () => {
@@ -1318,23 +1318,23 @@ $('#dmPdf').onclick = () => {
   const remTxt = rem.forma === 'percentual' ? `${rem.valor}% da base comissionável` : rem.forma === 'diaria' ? `${brl(rem.valor)} por diária` : 'valor fixo';
   const situ = !C.temPlanilha ? 'Sem planilha do dentista' : (C.difs + C.outro + C.naoLocalizado + C.soSistema + C.pendente === 0 ? 'Conciliado' : 'Não conciliado');
   doc.text(lat(`Remuneração: ${remTxt} · Situação: ${situ} · ${C.ok} de ${C.rows.filter(r => !r.glosa).length} atendimentos conciliados`), 12, 36.5);
-  const caixas = [['Informado pelo dentista', brl(C.informado)], ['Apurado no sistema', brl(C.apurado)], ['Diferença', brl(C.dif)], ['Glosas descontadas', brl(C.glosas || 0)], ['Base comissionável', brl(rs?.base || 0)],
+  const caixas = [['Atendimentos', `${C.ok} de ${C.rows.filter(r => !r.glosa).length} conciliados`], ['Glosas descontadas', brl(C.glosas || 0)], ['Valor considerado', brl(rs?.base || 0)],
     [rem.forma === 'diaria' ? `Comissão (${rs?.diarias || 0} diárias)` : 'Comissão apurada', brl(rs?.comissao || 0)]];
-  const bw = (W - 24 - 5 * 3) / 6;
+  const bw = (W - 24 - 3 * 3) / 4;
   caixas.forEach(([t, v], i) => { const x = 12 + i * (bw + 3), last = i === caixas.length - 1;
     doc.setDrawColor(223, 232, 230); doc.setFillColor(...(last ? verde : [247, 251, 250])); doc.roundedRect(x, 41, bw, 15, 2, 2, 'FD');
     doc.setFontSize(7.5); doc.setTextColor(...(last ? [255, 255, 255] : cinza)); doc.text(lat(t.toUpperCase()), x + 3, 46);
     doc.setFontSize(11.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...(last ? [255, 255, 255] : [15, 42, 46])); doc.text(lat(v), x + 3, 52.5); doc.setFont('helvetica', 'normal'); });
   const body = C.rows.map(r => [r.data ? new Date(r.data).toLocaleDateString('pt-BR') : '', lat(r.tipoRef === 'a' ? r.ref : ''), lat(r.paciente || ''),
     lat([r.guiasInf.join(', '), r.guiasSis.length ? 'sist.: ' + r.guiasSis.join(', ') : ''].filter(Boolean).join('\n')),
-    lat(r.procInf.join('; ') || '-'), lat(r.procSis.join('; ') || '-'), r.temInf ? brl(r.informado) : '-', r.temSis ? brl(r.apurado) : '-', brl(r.dif),
-    com(r) == null ? '-' : brl(com(r) || 0), lat((() => { const t = tagDm(r).replace('≠ ', '').replace('✓ ', ''), det = situacaoDet(r, id); return det.startsWith(t) ? det : `${t}: ${det}`; })())]);
+    lat(r.procInf.join('; ') || '-'), lat(r.procSis.join('; ') || '-'), r.base ? brl(r.base) : '-',
+    com(r) ? brl(com(r)) : '-', lat((() => { const t = tagDm(r).replace('≠ ', '').replace('✓ ', ''), det = situacaoDet(r, id); return det.startsWith(t) ? det : `${t}: ${det}`; })())]);
   const tc = k => brl(C.rows.filter(r => !r.glosa || k !== 'informado').reduce((a, r) => a + (r[k] || 0), 0));
-  doc.autoTable({ startY: 61, head: [['Data', 'Atend.', 'Paciente', 'Guia(s)', 'Proc. informado', 'Proc. apurado', 'Informado', 'Apurado', 'Dif.', 'Comissão', 'Situação']], body,
-    foot: [['', '', `${C.rows.length} linha(s)`, '', '', '', tc('informado'), tc('apurado'), brl(C.rows.reduce((a, r) => a + r.dif, 0)), rem.forma === 'percentual' ? brl(C.rows.reduce((a, r) => a + (com(r) || 0), 0)) : '-', '']],
+  doc.autoTable({ startY: 61, head: [['Data', 'Atend.', 'Paciente', 'Guia(s)', 'Proc. informado', 'Proc. apurado', 'Valor considerado', 'Comissão', 'Situação']], body,
+    foot: [['', '', `${C.rows.length} linha(s)`, '', '', '', brl(C.rows.reduce((a, r) => a + r.base, 0)), rem.forma === 'percentual' ? brl(C.rows.reduce((a, r) => a + (com(r) || 0), 0)) : '-', '']],
     theme: 'grid', styles: { font: 'helvetica', fontSize: 7, cellPadding: 1.4, overflow: 'linebreak', lineColor: [223, 232, 230], lineWidth: 0.2, textColor: [15, 42, 46], valign: 'middle' },
     headStyles: { fillColor: verde, textColor: 255, fontSize: 7.2 }, footStyles: { fillColor: [238, 243, 242], textColor: [15, 42, 46], fontStyle: 'bold' }, alternateRowStyles: { fillColor: [250, 252, 252] },
-    columnStyles: { 0: { cellWidth: 16 }, 1: { cellWidth: 14 }, 2: { cellWidth: 28 }, 3: { cellWidth: 24 }, 4: { cellWidth: 30 }, 5: { cellWidth: 38 }, 6: { cellWidth: 17, halign: 'right' }, 7: { cellWidth: 17, halign: 'right' }, 8: { cellWidth: 16, halign: 'right' }, 9: { cellWidth: 16, halign: 'right', fontStyle: 'bold' }, 10: { cellWidth: 'auto' } },
+    columnStyles: { 0: { cellWidth: 17 }, 1: { cellWidth: 15 }, 2: { cellWidth: 32 }, 3: { cellWidth: 26 }, 4: { cellWidth: 34 }, 5: { cellWidth: 42 }, 6: { cellWidth: 20, halign: 'right' }, 7: { cellWidth: 18, halign: 'right', fontStyle: 'bold' }, 8: { cellWidth: 'auto' } },
     margin: { left: 12, right: 12, bottom: 14 },
     didDrawPage: () => { const n = doc.internal.getNumberOfPages(), H = doc.internal.pageSize.getHeight(); doc.setFontSize(7.5); doc.setTextColor(...cinza);
       doc.text(lat(`${d?.nome || ''} · ${compLabel(S.conc.competencia)} · Comissão apurada ${brl(rs?.comissao || 0)}`), 12, H - 6); doc.text(`Página ${n}`, W - 12, H - 6, { align: 'right' }); } });
