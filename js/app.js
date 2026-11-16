@@ -530,8 +530,8 @@ function situacaoDet(r, id) {
   const nm = x => dentById(x)?.nome || '?';
   const origem = (r.origens || []).map(o => ({ regra: 'por regra de procedimento', sistema: 'pelo Resp. no sistema', manual: 'por decisão manual', split: 'por divisão entre dentistas', lancamento: 'por decisão (lançamento fora do sistema)', ajuste: 'com ajuste para o valor informado', dentista: 'pela sua produção', atendimento: 'pela sua produção (atendimento)', aprovada: 'pendência aprovada' }[o])).filter(Boolean);
   switch (r.status) {
-    case 'ok': return `Conciliado. Comissão sobre ${brl(r.base)}.`;
-    case 'dif': return `Comissão sobre ${brl(r.base)} (${r.ajusteInf ? 'valor ajustado na conferência' : 'valor do sistema'}). Diferença entre informado e sistema: ${brl(r.dif)}.`;
+    case 'ok': return r.ajusteInf ? `Conciliado com ajuste na conferência: o sistema tinha ${brl(r.sisLinhas || 0)} e foi pago ${brl(r.apurado)}. Comissão sobre ${brl(r.base)}.` : `Conciliado. Comissão sobre ${brl(r.base)}.`;
+    case 'dif': return `Comissão sobre ${brl(r.base)} (${r.ajusteInf ? `ajustado na conferência; o sistema tinha ${brl(r.sisLinhas || 0)}` : 'valor do sistema'}). Diferença entre informado e sistema: ${brl(r.dif)}.`;
     case 'outro': { const ex = r.det?.executores || []; const ps = (r.det?.splits || []).filter(p => p.dentistaId).map(p => `${nm(p.dentistaId)} ${p.pct}%`);
       return ex.includes(null) && ex.length === 1 ? 'Sem executor definido: aguardando decisão da clínica.' : `Associado a ${[...ex.filter(x => x && x !== 'split').map(nm), ...(ps.length ? ['divisão: ' + ps.join(', ')] : [])].join(', ') || '—'}${ex.includes(null) ? '; parte do atendimento ainda sem executor (aguardando decisão)' : ''}.`; }
     case 'pendente': return `Pendente no sistema da clínica: ${(r.det?.motivos || []).map(m => m.replace(/[.\s]+$/, '')).join('; ') || 'sem motivo informado'}. Fica fora da comissão até a aprovação do pagamento.`;

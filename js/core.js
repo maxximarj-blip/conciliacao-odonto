@@ -480,13 +480,13 @@ const Core = (() => {
     result.linhas.forEach(l => {
       if (l.executorId !== dentistaId) return;
       const o = get(l.atendimento ? 'a:' + l.atendimento : 'g:' + l.guia);
-      o.temSis = true; o.apurado += l.valor; if (l.comissionavel) o.base += l.valor; o.origens.add(l.origem); o.guiasSis.add(l.guiaRaw); o.procSis.push(l.procedimento); o.linhaIds.push(l.id);
+      o.temSis = true; o.apurado += l.valor; o.sisLinhas = (o.sisLinhas || 0) + l.valor; if (l.comissionavel) o.base += l.valor; o.origens.add(l.origem); o.guiasSis.add(l.guiaRaw); o.procSis.push(l.procedimento); o.linhaIds.push(l.id);
       o.paciente = o.paciente || l.paciente; o.data = o.data || l.data;
     });
     result.extras.forEach(e => {
       if (e.dentistaId !== dentistaId) return;
       if (e.tipo === 'glosa') { const o = get('l:' + e.key); o.glosa = true; o.temSis = true; o.apurado += e.valor; o.base += e.valor; o.guiasSis.add(e.ref); o.procSis.push(e.descricao); o.paciente = o.paciente || e.paciente; return; }
-      const k = e.key || (e.tipo === 'split' && e.guia ? keyGuia(e.guia) : e.tipo === 'lancamento' ? 'x:' + e.ref : sysAt.has(e.ref) ? 'a:' + e.ref : 'g:' + e.ref);
+      const k = e.key ? (/^[gr]:/.test(e.key) ? keyGuia(e.key.slice(2)) : e.key) : (e.tipo === 'split' && e.guia ? keyGuia(e.guia) : e.tipo === 'lancamento' ? 'x:' + e.ref : sysAt.has(e.ref) ? 'a:' + e.ref : 'g:' + e.ref);
       const o = get(k); o.temSis = true; o.apurado += e.valor; if (e.comissionavel !== false) o.base += e.valor; if (e.tipo === 'ajuste') o.ajusteInf = true; o.origens.add(e.tipo); o.procSis.push(e.descricao + (e.tipo === 'ajuste' ? ' (ajuste)' : ''));
       o.paciente = o.paciente || e.paciente;
     });
